@@ -108,6 +108,18 @@ export function AIChatView() {
         // If unknown, fall through to regular AI chat
       }
 
+      // ----- Step 1b: Routine commands (edit routine blocks via chat) -----
+      const { parseRoutineAction, executeRoutineAction } = await import('@/lib/ai/routine-manager');
+      const routineAction = parseRoutineAction(message);
+      if (routineAction && routineAction.action !== 'unknown') {
+        const result = executeRoutineAction(routineAction);
+        if (result.message) {
+          appendAIChat({ role: 'assistant', content: result.message });
+        }
+        setBusy(false);
+        return;
+      }
+
       // ----- Step 2: Regular AI chat with memory retrieval -----
       const today = todayISO();
       const ctx = buildLocalContext({

@@ -32,9 +32,11 @@ import { NotificationPreferencesView } from '@/components/app/views/notification
 import { RecoveryQueueView } from '@/components/app/views/recovery-queue';
 // V5: native notification system
 import { NotificationLogView } from '@/components/app/views/notification-log';
+import { NotificationToasts } from '@/components/app/notification-toasts';
 import { Button } from '@/components/ui/button';
 import { Menu, Plus, Bell, Loader2 } from 'lucide-react';
 import { todayISO, formatDateLong } from '@/lib/utils';
+import { getNotificationLog } from '@/lib/notifications/service';
 
 export default function Home() {
   const [view, setView] = useState<ViewKey>('dashboard');
@@ -90,6 +92,19 @@ export default function Home() {
 
     return () => { cancelled = true; };
   }, [autoTaskNotifications, notificationsEnabled]);
+
+  // Track unread notification count for bell icon badge
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  useEffect(() => {
+    const update = () => {
+      const log = getNotificationLog();
+      const recent = log.filter((e) => !e.action).length;
+      setUnreadNotifCount(Math.min(recent, 99));
+    };
+    update();
+    const interval = setInterval(update, 5000);  // refresh every 5s
+    return () => clearInterval(interval);
+  }, [view]);  // refresh when view changes too
 
   function playCompleteSound() {
     if (!soundEnabled) return;
@@ -194,18 +209,23 @@ export default function Home() {
             variant="ghost"
             size="icon"
             aria-label="Notifications"
-            onClick={() => {
-              if (notificationsEnabled && 'Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission();
-              }
-            }}
+            className="relative"
+            onClick={() => setView('notifications')}
           >
             <Bell className="h-4 w-4" />
+            {unreadNotifCount > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+              </span>
+            )}
           </Button>
           <Button onClick={() => setTaskDialogOpen(true)} size="sm">
             <Plus className="h-4 w-4 mr-1" /> New
           </Button>
         </header>
+
+        {/* In-app notification toasts (always visible, even if browser blocks system notifications) */}
+        <NotificationToasts />
 
         {/* Main content */}
         <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto">

@@ -109,7 +109,7 @@ function pollWebNotifications(): void {
   }
 }
 
-// ─── Actually fire a browser notification + log it ───
+// ─── Actually fire a browser notification + log it + show in-app toast ───
 function fireWebNotification(
   title: string,
   body: string,
@@ -125,23 +125,31 @@ function fireWebNotification(
     habitId: extra?.habitId,
   });
 
-  // Try to show browser notification
+  // Show in-app toast (ALWAYS — this is the reliable visible notification
+  // even if the browser blocks the system popup)
+  try {
+    import('./toast').then(({ showToast }) => {
+      showToast(title, body, channelId, false);
+    });
+  } catch { /* ignore */ }
+
+  // Try to show browser system notification
   try {
     if (typeof Notification === 'undefined') {
-      console.warn('[Notif] Notification API not available');
+      console.warn('[Notif] Notification API not available — in-app toast shown instead');
       return;
     }
     if (Notification.permission !== 'granted') {
-      console.warn('[Notif] Permission not granted — logged but not shown. Click "Enable Notifications" in Preferences.');
+      console.warn('[Notif] Permission not granted — in-app toast shown instead. Click "Enable Notifications" in Notifications view.');
       return;
     }
     new Notification(title, {
       body,
       tag: extra?.taskId ?? `july-plan-${Date.now()}`,
-      // icon could be added
+      requireInteraction: false,
     });
   } catch (e) {
-    console.warn('[Notif] Failed to show notification:', e);
+    console.warn('[Notif] Failed to show system notification (in-app toast shown instead):', e);
   }
 }
 
@@ -318,19 +326,23 @@ export async function sendTestNotification(): Promise<{ success: boolean; messag
   }
 
   if (isWeb()) {
-    if (permStatus !== 'granted') {
-      return {
-        success: false,
-        message: 'Permission not granted. Click "Enable Notifications" first, then try again.',
-      };
-    }
+    // Always fire the in-app toast + log (even if permission not granted)
+    // so the user can verify the system is working.
     fireWebNotification(
       '🧪 Test Notification',
-      'If you see this, browser notifications are working! ' + new Date().toLocaleTimeString(),
+      permStatus === 'granted'
+        ? 'If you see this, browser notifications are working! ' + new Date().toLocaleTimeString()
+        : 'In-app toast works! For system popup, enable notification permission in your browser.',
       'tasks',
       { type: 'test' },
     );
-    return { success: true, message: 'Test notification sent. Check your screen + Notification History.' };
+    if (permStatus === 'granted') {
+      return { success: true, message: '✅ Test sent! Check your screen + system tray + Notification History.' };
+    }
+    return {
+      success: true,
+      message: '✅ In-app toast shown! For system popup, click "Enable Notifications" above (then check browser settings if it was denied).',
+    };
   }
 
   return { success: false, message: 'Unknown platform.' };
