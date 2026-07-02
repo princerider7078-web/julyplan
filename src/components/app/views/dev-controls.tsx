@@ -158,13 +158,13 @@ export function DevControlsView() {
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Temperature: {settings.aiTemperature.toFixed(1)}</Label>
+                <Label>Temperature: {(settings.aiTemperature ?? 0.7).toFixed(1)}</Label>
                 <Input
                   type="range"
                   min={0}
                   max={1.5}
                   step={0.1}
-                  value={settings.aiTemperature}
+                  value={settings.aiTemperature ?? 0.7}
                   onChange={(e) => updateSettings({ aiTemperature: parseFloat(e.target.value) })}
                 />
               </div>
@@ -172,7 +172,7 @@ export function DevControlsView() {
                 <Label>Max tokens</Label>
                 <Input
                   type="number"
-                  value={settings.aiMaxTokens}
+                  value={settings.aiMaxTokens ?? 1500}
                   onChange={(e) => updateSettings({ aiMaxTokens: parseInt(e.target.value || '1500', 10) })}
                 />
               </div>

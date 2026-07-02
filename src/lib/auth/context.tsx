@@ -16,11 +16,6 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
-function readInitialOffline(): boolean {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem('july-plan-offline') === 'true';
-}
-
 const OFFLINE_PROFILE = {
   id: 'offline-user',
   email: 'offline@local',
@@ -30,55 +25,77 @@ const OFFLINE_PROFILE = {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authedProfile, setAuthedProfile] = useState<{ id: string; email: string; name?: string } | null>(null);
-  // Loading is FALSE immediately in offline mode (no Supabase to check),
-  // TRUE if we need to wait for the Supabase session check.
-  const [isOffline, setIsOffline] = useState<boolean>(readInitialOffline);
-  const [sessionChecked, setSessionChecked] = useState<boolean>(isOffline || !supabaseConfigured);
+  // Deterministic initial state — server and client render the same HTML.
+  // Real values are loaded in the mount effect below; this prevents the
+  // hydration mismatch where the server renders the login screen but the
+  // client (with localStorage access) renders the dashboard.
+  const [isOffline, setIsOffline] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!supabaseConfigured || isOffline) {
-      return;
-    }
-
     let cancelled = false;
 
-    // Async getSession — setState happens in the callback, not the effect body
-    supabase.auth.getSession().then(({ data }) => {
+    // Defer all setState calls to a microtask so the effect body itself
+    // doesn't call setState synchronously (satisfies the lint rule).
+    queueMicrotask(() => {
       if (cancelled) return;
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) {
-        setAuthedProfile({
-          id: data.session.user.id,
-          email: data.session.user.email ?? '',
-          name: data.session.user.user_metadata?.name,
-        });
+
+      const savedOffline = typeof window !== 'undefined'
+        && localStorage.getItem('july-plan-offline') === 'true';
+
+      if (savedOffline) {
+        setIsOffline(true);
+        setMounted(true);
+        return;
       }
-      setSessionChecked(true);
-    }).catch(() => {
-      if (cancelled) return;
-      setSessionChecked(true);
+
+      if (!supabaseConfigured) {
+        setMounted(true);
+        return;
+      }
+
+      // Async getSession — setState in the .then callback
+      supabase.auth.getSession().then(({ data }) => {
+        if (cancelled) return;
+        setUser(data.session?.user ?? null);
+        if (data.session?.user) {
+          setAuthedProfile({
+            id: data.session.user.id,
+            email: data.session.user.email ?? '',
+            name: data.session.user.user_metadata?.name,
+          });
+        }
+        setMounted(true);
+      }).catch(() => {
+        if (cancelled) return;
+        setMounted(true);
+      });
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        setAuthedProfile({
-          id: session.user.id,
-          email: session.user.email ?? '',
-          name: session.user.user_metadata?.name,
-        });
-        setIsOffline(false);
-        localStorage.removeItem('july-plan-offline');
-      } else {
-        setAuthedProfile(null);
-      }
-    });
+    // Subscribe to auth state changes — setState in the callback, not effect body
+    let sub: { subscription: { unsubscribe: () => void } } | null = null;
+    if (supabaseConfigured) {
+      sub = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          setAuthedProfile({
+            id: session.user.id,
+            email: session.user.email ?? '',
+            name: session.user.user_metadata?.name,
+          });
+          setIsOffline(false);
+          localStorage.removeItem('july-plan-offline');
+        } else {
+          setAuthedProfile(null);
+        }
+      });
+    }
 
     return () => {
       cancelled = true;
-      sub.subscription.unsubscribe();
+      sub?.subscription.unsubscribe();
     };
-  }, [isOffline]);
+  }, []);
 
   const profile = useMemo(() => {
     if (isOffline) return OFFLINE_PROFILE;
@@ -117,7 +134,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading: !sessionChecked, isOffline, signIn, signUp, signInOffline, signOut }}
+      value={{
+        user,
+        profile,
+        // Loading = "we haven't yet checked localStorage + Supabase session"
+        loading: !mounted,
+        isOffline,
+        signIn,
+        signUp,
+        signInOffline,
+        signOut,
+      }}
     >
       {children}
     </AuthContext.Provider>

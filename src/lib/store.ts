@@ -431,7 +431,20 @@ export const useStore = create<Store>()(
     {
       name: 'july-plan-store',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      // Backfill missing fields from defaults — important when migrating
+      // from V1 (no AI settings) to V2 (with AI settings). Without this,
+      // settings.aiTemperature is undefined and crashes .toFixed(1).
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppState>;
+        const c = current as AppState;
+        return {
+          ...c,
+          ...p,
+          // Deep-merge settings so missing AI fields fall back to defaults
+          settings: { ...c.settings, ...(p.settings ?? {}) },
+        };
+      },
     },
   ),
 );

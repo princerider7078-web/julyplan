@@ -70,15 +70,15 @@ export function KnowledgeView() {
     try {
       const response = await aiKnowledgeSummary(noteContent, {
         profile: {
-          provider: settings.aiProvider,
-          model_chat: settings.aiModelChat,
-          model_planning: settings.aiModelPlanning,
-          model_reports: settings.aiModelReports,
+          provider: settings.aiProvider ?? 'zai',
+          model_chat: settings.aiModelChat ?? 'glm-4.6',
+          model_planning: settings.aiModelPlanning ?? 'glm-4.6',
+          model_reports: settings.aiModelReports ?? 'glm-4.6',
           fallback_model: 'glm-4.5',
-          temperature: settings.aiTemperature,
-          max_tokens: settings.aiMaxTokens,
+          temperature: settings.aiTemperature ?? 0.7,
+          max_tokens: settings.aiMaxTokens ?? 1500,
           prompt_style: 'coach',
-          enabled_modules_json: settings.aiEnabledModules,
+          enabled_modules_json: settings.aiEnabledModules ?? [],
         },
         userId: profile?.id,
       });
