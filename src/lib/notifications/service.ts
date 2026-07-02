@@ -1,15 +1,16 @@
 // Unified Notification Service.
 // Uses Capacitor LocalNotifications on native (Android/iOS) for real system
 // notifications with channels, action buttons, and background scheduling.
-// Falls back to browser Notification API on web with 30s polling (more reliable
-// than setTimeout — survives page reloads and catches up missed notifications).
+// Falls back to browser Notification API on web with Service Worker for
+// reliable display (works even when tab is not focused).
 //
 // Key features:
 // - Schedule notifications at exact times
 // - 30s web polling (fires reliably while tab is open, catches up missed ones)
+// - Service Worker for reliable notification display in Chrome/Edge/Firefox
 // - Notification channels (Android): Tasks, Habits, Health, etc.
 // - Interactive action buttons: Mark Done, Snooze, Reschedule, Ask AI
-// - Notification log (history of all FIRED notifications — not scheduled ones)
+// - Notification log (only logs when notification is ACTUALLY shown, not just scheduled)
 // - Test notification button for immediate verification
 
 import { LocalNotifications } from '@capacitor/local-notifications';
@@ -33,6 +34,7 @@ export interface ScheduledNotification {
 }
 
 let isInitialized = false;
+let swRegistered = false;
 
 // ─── Web polling state (survives reloads via localStorage) ───
 const WEB_SCHEDULED_KEY = 'july-plan-web-scheduled';
@@ -62,7 +64,6 @@ function saveWebScheduled(list: WebScheduledEntry[]): void {
 
 function addWebScheduled(entry: WebScheduledEntry): void {
   const list = loadWebScheduled();
-  // Don't add duplicates
   if (list.some((e) => e.id === entry.id)) return;
   list.push(entry);
   saveWebScheduled(list);
@@ -73,16 +74,31 @@ function removeWebScheduled(id: number): void {
   saveWebScheduled(list);
 }
 
+// ─── Service Worker registration (for reliable notifications) ───
+
+async function ensureServiceWorker(): Promise<boolean> {
+  if (swRegistered) return true;
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return false;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    swRegistered = true;
+    console.log('[Notif] Service Worker registered for notifications');
+    return true;
+  } catch (e) {
+    console.warn('[Notif] SW registration failed, falling back to Notification API:', e);
+    return false;
+  }
+}
+
 // ─── Web polling: check every 30s for due notifications ───
 function startWebPolling(): void {
   if (webPollInterval) return;
   if (typeof window === 'undefined') return;
 
-  // Run immediately + every 30s
   pollWebNotifications();
   webPollInterval = setInterval(pollWebNotifications, 30_000);
 
-  // Also poll when tab becomes visible (catch up missed notifications)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       pollWebNotifications();
@@ -92,7 +108,7 @@ function startWebPolling(): void {
   console.log('[Notif] Web polling started (30s interval + visibility change)');
 }
 
-function pollWebNotifications(): void {
+async function pollWebNotifications(): Promise<void> {
   const list = loadWebScheduled();
   if (list.length === 0) return;
 
@@ -102,54 +118,79 @@ function pollWebNotifications(): void {
 
   if (due.length > 0) {
     console.log(`[Notif] Firing ${due.length} due notification(s)`);
-    due.forEach((entry) => {
-      fireWebNotification(entry.title, entry.body, entry.channelId, entry.extra);
-    });
+    for (const entry of due) {
+      await fireWebNotification(entry.title, entry.body, entry.channelId, entry.extra);
+    }
     saveWebScheduled(remaining);
   }
 }
 
-// ─── Actually fire a browser notification + log it + show in-app toast ───
-function fireWebNotification(
+// ─── Actually fire a browser notification + log it ───
+// Only logs when notification is ACTUALLY shown (permission granted + display attempted)
+async function fireWebNotification(
   title: string,
   body: string,
   channelId: string,
   extra?: ScheduledNotification['extra'],
-): void {
-  // Log it as fired (regardless of permission — user can see in log)
-  logNotificationFired({
-    title,
-    body,
-    channelId,
-    taskId: extra?.taskId,
-    habitId: extra?.habitId,
-  });
+): Promise<void> {
+  // Check permission FIRST — don't log if we can't show
+  if (typeof Notification === 'undefined') {
+    console.warn('[Notif] Notification API not available');
+    return;
+  }
 
-  // Show in-app toast (ALWAYS — this is the reliable visible notification
-  // even if the browser blocks the system popup)
-  try {
-    import('./toast').then(({ showToast }) => {
-      showToast(title, body, channelId, false);
-    });
-  } catch { /* ignore */ }
+  if (Notification.permission !== 'granted') {
+    console.warn('[Notif] Permission not granted — notification NOT shown. Click "Enable Notifications" in Notifications view.');
+    // Don't log — user doesn't want to see "fired" entries for notifications that never showed
+    return;
+  }
 
-  // Try to show browser system notification
+  // Try Service Worker first (more reliable, works when tab not focused)
+  let shown = false;
   try {
-    if (typeof Notification === 'undefined') {
-      console.warn('[Notif] Notification API not available — in-app toast shown instead');
-      return;
+    const swReady = await ensureServiceWorker();
+    if (swReady) {
+      const reg = await navigator.serviceWorker.ready;
+      reg.showNotification(title, {
+        body,
+        tag: extra?.taskId ?? `july-plan-${Date.now()}`,
+        icon: '/logo.svg',
+        badge: '/logo.svg',
+        requireInteraction: false,
+        data: extra,
+      });
+      shown = true;
     }
-    if (Notification.permission !== 'granted') {
-      console.warn('[Notif] Permission not granted — in-app toast shown instead. Click "Enable Notifications" in Notifications view.');
-      return;
-    }
-    new Notification(title, {
-      body,
-      tag: extra?.taskId ?? `july-plan-${Date.now()}`,
-      requireInteraction: false,
-    });
   } catch (e) {
-    console.warn('[Notif] Failed to show system notification (in-app toast shown instead):', e);
+    console.warn('[Notif] SW showNotification failed, trying direct Notification:', e);
+  }
+
+  // Fallback: direct Notification API
+  if (!shown) {
+    try {
+      const notif = new Notification(title, {
+        body,
+        tag: extra?.taskId ?? `july-plan-${Date.now()}`,
+        icon: '/logo.svg',
+      });
+      shown = true;
+      // Auto-close after 10 seconds
+      setTimeout(() => notif.close(), 10_000);
+    } catch (e) {
+      console.error('[Notif] Direct Notification also failed:', e);
+    }
+  }
+
+  // Only log if notification was actually shown
+  if (shown) {
+    logNotificationFired({
+      title,
+      body,
+      channelId,
+      taskId: extra?.taskId,
+      habitId: extra?.habitId,
+    });
+    console.log('[Notif] ✅ Notification shown + logged:', title);
   }
 }
 
@@ -167,7 +208,6 @@ export async function initNotifications(): Promise<void> {
         return;
       }
 
-      // Create notification channels (Android)
       for (const ch of CHANNELS) {
         try {
           await LocalNotifications.createChannel({
@@ -182,7 +222,6 @@ export async function initNotifications(): Promise<void> {
         } catch { /* channel may already exist */ }
       }
 
-      // Listen for action button taps
       LocalNotifications.addListener(
         'localNotificationActionPerformed',
         (event) => handleActionPerformed(event),
@@ -197,11 +236,8 @@ export async function initNotifications(): Promise<void> {
       console.warn('[Notif] Native init failed:', e);
     }
   } else if (isWeb()) {
-    // Web: request permission if not asked yet
-    if ('Notification' in window && Notification.permission === 'default') {
-      // Don't auto-request — let user click the button. Auto-request is annoying.
-      console.log('[Notif] Web — permission not yet requested. User can enable in Preferences.');
-    }
+    // Register service worker early for notification reliability
+    await ensureServiceWorker();
     // Start polling for due notifications
     startWebPolling();
     console.log('[Notif] Web notification service initialized');
@@ -220,17 +256,18 @@ export async function requestNotificationPermission(): Promise<boolean> {
   if (isWeb() && 'Notification' in window) {
     try {
       const result = await Notification.requestPermission();
+      console.log('[Notif] Permission request result:', result);
       return result === 'granted';
-    } catch { return false; }
+    } catch (e) {
+      console.error('[Notif] Permission request failed:', e);
+      return false;
+    }
   }
   return false;
 }
 
 export function getPermissionStatus(): 'granted' | 'denied' | 'default' | 'unknown' {
-  if (isNative()) {
-    // Can't check synchronously — return 'unknown' for now
-    return 'unknown';
-  }
+  if (isNative()) return 'unknown';
   if (isWeb() && 'Notification' in window) {
     return Notification.permission;
   }
@@ -254,10 +291,7 @@ export async function scheduleNotification(
             id,
             title: notif.title,
             body: notif.body,
-            schedule: {
-              at: notif.scheduledAt,
-              allowWhileIdle: true,
-            },
+            schedule: { at: notif.scheduledAt, allowWhileIdle: true },
             channelId: notif.channelId,
             actionSetId: notif.extra?.type ?? 'default',
             extra: {
@@ -276,16 +310,13 @@ export async function scheduleNotification(
     }
   }
 
-  // Web: add to polling list
   if (isWeb()) {
-    // If already past, fire immediately
     if (fireTime <= now) {
       console.log('[Notif] Web — firing immediately (past time):', notif.title);
-      fireWebNotification(notif.title, notif.body, notif.channelId, notif.extra);
+      await fireWebNotification(notif.title, notif.body, notif.channelId, notif.extra);
       return id;
     }
 
-    // Otherwise, add to scheduled list (polled every 30s)
     addWebScheduled({
       id,
       title: notif.title,
@@ -326,42 +357,32 @@ export async function sendTestNotification(): Promise<{ success: boolean; messag
   }
 
   if (isWeb()) {
-    // Always fire the in-app toast + log (even if permission not granted)
-    // so the user can verify the system is working.
-    fireWebNotification(
+    if (permStatus !== 'granted') {
+      return {
+        success: false,
+        message: '❌ Permission not granted. Click "Enable Notifications" first, then try again. If you previously denied, go to Chrome Settings → Site Settings → Notifications → Allow for this site.',
+      };
+    }
+    await fireWebNotification(
       '🧪 Test Notification',
-      permStatus === 'granted'
-        ? 'If you see this, browser notifications are working! ' + new Date().toLocaleTimeString()
-        : 'In-app toast works! For system popup, enable notification permission in your browser.',
+      'If you see this, browser notifications are working! ' + new Date().toLocaleTimeString(),
       'tasks',
       { type: 'test' },
     );
-    if (permStatus === 'granted') {
-      return { success: true, message: '✅ Test sent! Check your screen + system tray + Notification History.' };
-    }
-    return {
-      success: true,
-      message: '✅ In-app toast shown! For system popup, click "Enable Notifications" above (then check browser settings if it was denied).',
-    };
+    return { success: true, message: '✅ Test notification sent! Check your screen + Notification History.' };
   }
 
   return { success: false, message: 'Unknown platform.' };
 }
 
-// ─── Cancel a scheduled notification ───
+// ─── Cancel ───
 
 export async function cancelNotification(id: number): Promise<void> {
   if (isNative()) {
-    try {
-      await LocalNotifications.cancel({ notifications: [{ id }] });
-    } catch { /* ignore */ }
+    try { await LocalNotifications.cancel({ notifications: [{ id }] }); } catch { /* ignore */ }
   }
-  if (isWeb()) {
-    removeWebScheduled(id);
-  }
+  if (isWeb()) { removeWebScheduled(id); }
 }
-
-// ─── Cancel all pending notifications for a task ───
 
 export async function cancelTaskNotifications(taskId: string): Promise<void> {
   if (isNative()) {
@@ -370,19 +391,16 @@ export async function cancelTaskNotifications(taskId: string): Promise<void> {
       const toCancel = pending.notifications.filter(
         (n) => (n.extra as Record<string, unknown>)?.taskId === taskId,
       ).map((n) => ({ id: n.id }));
-      if (toCancel.length > 0) {
-        await LocalNotifications.cancel({ notifications: toCancel });
-      }
+      if (toCancel.length > 0) await LocalNotifications.cancel({ notifications: toCancel });
     } catch { /* ignore */ }
   }
   if (isWeb()) {
     const list = loadWebScheduled();
-    const remaining = list.filter((e) => e.extra?.taskId !== taskId);
-    saveWebScheduled(remaining);
+    saveWebScheduled(list.filter((e) => e.extra?.taskId !== taskId));
   }
 }
 
-// ─── Get all pending notifications ───
+// ─── Get pending ───
 
 export async function getPendingNotifications(): Promise<ScheduledNotification[]> {
   if (isNative()) {
@@ -411,59 +429,39 @@ export async function getPendingNotifications(): Promise<ScheduledNotification[]
   return [];
 }
 
-// ─── Action handler (native only — web has no action buttons) ───
+// ─── Action handler (native only) ───
 
 async function handleActionPerformed(event: { actionId?: string; notification?: { id?: number; title?: string; body?: string; extra?: Record<string, unknown>; channelId?: string } }): Promise<void> {
   const actionId = event.actionId ?? '';
   const notificationId = event.notification?.id ?? 0;
   const extra = (event.notification?.extra ?? {}) as { taskId?: string; habitId?: string; type?: string };
 
-  console.log('[Notif] Action performed:', actionId, 'for notification', notificationId);
-
   const { useStore } = await import('../store');
 
   switch (actionId) {
-    case 'mark_done': {
+    case 'mark_done':
       if (extra.taskId) {
-        const store = useStore.getState();
         const today = new Date().toISOString().slice(0, 10);
-        store.toggleTaskComplete(extra.taskId, today);
+        useStore.getState().toggleTaskComplete(extra.taskId, today);
       }
-      if (extra.habitId) {
-        const store = useStore.getState();
-        store.toggleHabit(extra.habitId);
-      }
+      if (extra.habitId) useStore.getState().toggleHabit(extra.habitId);
       break;
-    }
     case 'snooze_15':
     case 'snooze_30':
-    case 'snooze_60': {
-      const minutes = actionId === 'snooze_15' ? 15 : actionId === 'snooze_30' ? 30 : 60;
-      const snoozeAt = new Date(Date.now() + minutes * 60000);
+    case 'snooze_60':
       await scheduleNotification({
         title: event.notification?.title ?? 'Reminder',
         body: event.notification?.body ?? '',
-        scheduledAt: snoozeAt,
+        scheduledAt: new Date(Date.now() + (actionId === 'snooze_15' ? 15 : actionId === 'snooze_30' ? 30 : 60) * 60000),
         channelId: event.notification?.channelId ?? 'tasks',
         extra: extra as ScheduledNotification['extra'],
       });
       break;
-    }
-    case 'skip':
-      break;
-    case 'start_now':
-    case 'reschedule':
-    case 'ask_ai':
-    case 'view_tasks':
-      break;
   }
-
   logNotificationAction(notificationId, actionId, extra);
 }
 
 function handleReceived(event: { notificationId?: number; title?: string; body?: string }): void {
-  // Native notification was shown — log it
-  console.log('[Notif] Native notification received:', event.notificationId);
   logNotificationFired({
     title: event.title ?? 'Notification',
     body: event.body ?? '',
@@ -471,7 +469,7 @@ function handleReceived(event: { notificationId?: number; title?: string; body?:
   });
 }
 
-// ─── Notification log (analytics) ───
+// ─── Notification log ───
 
 export interface NotificationLogEntry {
   id: string;
@@ -518,39 +516,22 @@ export function getNotificationLog(): NotificationLogEntry[] {
   try {
     const stored = localStorage.getItem(LOG_KEY);
     return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 export function clearNotificationLog(): void {
-  try {
-    localStorage.removeItem(LOG_KEY);
-  } catch { /* ignore */ }
+  try { localStorage.removeItem(LOG_KEY); } catch { /* ignore */ }
 }
 
-// ─── Notification analytics ───
-
-export function getNotificationAnalytics(): {
-  totalSent: number;
-  totalActed: number;
-  completionRate: number;
-  snoozeRate: number;
-  ignoreRate: number;
-  byChannel: Record<string, number>;
-} {
+export function getNotificationAnalytics() {
   const log = getNotificationLog();
   const totalSent = log.length;
   const acted = log.filter((e) => e.action).length;
   const completed = log.filter((e) => e.action === 'mark_done').length;
   const snoozed = log.filter((e) => e.action?.startsWith('snooze')).length;
   const ignored = log.filter((e) => !e.action).length;
-
   const byChannel: Record<string, number> = {};
-  log.forEach((e) => {
-    byChannel[e.channelId] = (byChannel[e.channelId] ?? 0) + 1;
-  });
-
+  log.forEach((e) => { byChannel[e.channelId] = (byChannel[e.channelId] ?? 0) + 1; });
   return {
     totalSent,
     totalActed: acted,
