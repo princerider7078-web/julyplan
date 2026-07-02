@@ -1,5 +1,7 @@
 // Default AI provider: calls the /api/ai server route (which uses z-ai-web-dev-sdk).
 // This keeps the SDK server-side only — the browser never imports it.
+// In the APK build (static export, no API routes), fetch will fail and the
+// error is caught upstream — AI features show a friendly error there.
 import type { AIProviderAdapter, AIRequest, AIResponse } from '../types';
 
 export const zaiProvider: AIProviderAdapter = {
@@ -11,17 +13,26 @@ export const zaiProvider: AIProviderAdapter = {
   ],
   async complete(req: AIRequest, model: string): Promise<AIResponse> {
     const start = Date.now();
-    const res = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: req.messages,
-        model: model || 'glm-4.6',
-        temperature: req.temperature ?? 0.7,
-        max_tokens: req.maxTokens ?? 1500,
-        response_format: req.responseFormat,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: req.messages,
+          model: model || 'glm-4.6',
+          temperature: req.temperature ?? 0.7,
+          max_tokens: req.maxTokens ?? 1500,
+          response_format: req.responseFormat,
+        }),
+      });
+    } catch (networkErr) {
+      throw new Error(
+        'AI features require an internet connection and the cloud version of July Plan. ' +
+        'In the offline APK build, all task/habit/finance/memory features work, but AI chat/planner/reports are disabled. ' +
+        `(${networkErr instanceof Error ? networkErr.message : 'network error'})`,
+      );
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'request failed' }));
       throw new Error(err.error || `AI route returned ${res.status}`);

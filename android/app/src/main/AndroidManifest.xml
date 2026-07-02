@@ -38,7 +38,5 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Vibrate for task completion feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Allow app to keep working offline (no extra permission needed, but declare for clarity) -->
 </manifest>
