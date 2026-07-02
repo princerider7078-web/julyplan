@@ -1,5 +1,12 @@
 apply plugin: 'com.android.application'
 
+// Load signing config from keystore.properties (gitignored — see keystore.properties.example)
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.julyplan.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -18,17 +25,22 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file('../keystore/july-plan-release.keystore')
-            storePassword 'julyplan2026'
-            keyAlias 'july-plan'
-            keyPassword 'julyplan2026'
+            if (keystoreProperties['storeFile']) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
     }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            // Only apply signing config if keystore.properties exists
+            if (keystoreProperties['storeFile']) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
