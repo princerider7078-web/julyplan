@@ -30,6 +30,8 @@ import { ConversationHistoryView } from '@/components/app/views/conversation-his
 // V4 views
 import { NotificationPreferencesView } from '@/components/app/views/notification-preferences';
 import { RecoveryQueueView } from '@/components/app/views/recovery-queue';
+// V5: native notification system
+import { NotificationLogView } from '@/components/app/views/notification-log';
 import { Button } from '@/components/ui/button';
 import { Menu, Plus, Bell, Loader2 } from 'lucide-react';
 import { todayISO, formatDateLong } from '@/lib/utils';
@@ -56,33 +58,37 @@ export default function Home() {
     }
   }, [profile, isOffline]);
 
-  // ---------- Auto-notification scheduler (V4.1) ----------
-  // Scans tasks every 30s. When task.time arrives, fires:
-  //   1. Browser/Android system Notification
-  //   2. In-app notification (visible in Notification Center with AI reasoning)
-  //   3. Sound chime
-  // Respects quiet hours, learning profile, dedup per day.
+  // ---------- Native notification system (V5) ----------
+  // Initializes Capacitor LocalNotifications (native) or browser notifications (web).
+  // Schedules reminders for all tasks with times: at task time + 10 min before,
+  // + 1 hour / 1 day before for high/critical. Also deadline alerts + daily briefing.
   const autoTaskNotifications = useStore((s) => s.settings.autoTaskNotifications);
 
   useEffect(() => {
     if (!autoTaskNotifications || !notificationsEnabled) return;
     if (typeof window === 'undefined') return;
 
-    // Request notification permission
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
+    let cancelled = false;
+
+    async function initNotifSystem() {
+      try {
+        // Init native notification service (Capacitor + browser fallback)
+        const { initNotifications } = await import('@/lib/notifications/service');
+        await initNotifications();
+
+        if (cancelled) return;
+
+        // Schedule all task reminders
+        const { rescheduleAll } = await import('@/lib/notifications/scheduler');
+        await rescheduleAll();
+      } catch (e) {
+        console.warn('[Notif] Init failed:', e);
+      }
     }
 
-    // Start the scheduler (lazy import to avoid SSR issues)
-    let cleanup: (() => void) | undefined;
-    import('@/lib/ai/notification-scheduler').then(({ startAutoNotificationScheduler, stopAutoNotificationScheduler }) => {
-      startAutoNotificationScheduler();
-      cleanup = stopAutoNotificationScheduler;
-    });
+    initNotifSystem();
 
-    return () => {
-      if (cleanup) cleanup();
-    };
+    return () => { cancelled = true; };
   }, [autoTaskNotifications, notificationsEnabled]);
 
   function playCompleteSound() {
@@ -174,7 +180,7 @@ export default function Home() {
               {view === 'dev' && 'AI Controls'}
               {view === 'memory' && 'AI Memory Manager'}
               {view === 'briefing' && 'Daily Briefing'}
-              {view === 'notifications' && 'AI Notification Center'}
+              {view === 'notifications' && 'Notifications'}
               {view === 'history' && 'Conversation History'}
               {view === 'notif-prefs' && 'Notification Preferences'}
               {view === 'recovery' && 'Recovery Queue'}
@@ -222,7 +228,7 @@ export default function Home() {
           {/* V3 views */}
           {view === 'memory' && <MemoryManagerView />}
           {view === 'briefing' && <BriefingView onNavigate={setView} />}
-          {view === 'notifications' && <NotificationCenterView onNavigate={setView} />}
+          {view === 'notifications' && <NotificationLogView onNavigate={setView} />}
           {view === 'history' && <ConversationHistoryView />}
           {/* V4 views */}
           {view === 'notif-prefs' && <NotificationPreferencesView />}

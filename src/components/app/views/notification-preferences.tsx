@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { refreshLearningProfile } from '@/lib/ai/learning-engine';
-import { testFireTaskNotification, getUpcomingTaskCount } from '@/lib/ai/notification-scheduler';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -10,10 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  Bell, Moon, Volume2, Brain, Clock, Layers, TrendingUp, Zap, AlarmClock, Play,
+  Bell, Moon, Volume2, Brain, Clock, Layers, TrendingUp, Zap, AlarmClock, RefreshCw,
 } from 'lucide-react';
 import type { NotificationCategory, NotificationTone } from '@/lib/types';
 import { cn, todayISO } from '@/lib/utils';
@@ -64,8 +60,8 @@ export function NotificationPreferencesView() {
         </p>
       </div>
 
-      {/* Auto Task Notifications (V4.1) */}
-      <AutoTaskNotificationsCard />
+      {/* Native notification status */}
+      <NativeNotificationStatusCard />
 
       {/* Tone */}
       <Card>
@@ -364,49 +360,59 @@ export function NotificationPreferencesView() {
   );
 }
 
-// ─── V4.1: Auto Task Notifications card ───
-function AutoTaskNotificationsCard() {
+// ─── Native Notification Status card ───
+function NativeNotificationStatusCard() {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
-  const tasks = useStore((s) => s.tasks);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testBusy, setTestBusy] = useState(false);
 
-  const today = todayISO();
-  // Tasks with a time today (not completed)
-  const todaysTimedTasks = tasks.filter(
-    (t) => t.status !== 'archived' && t.time && !t.completionLog?.[today]
-      && (t.repeatRule !== 'none' || t.startDate === today),
-  );
-  const upcomingCount = getUpcomingTaskCount();
+  const [platform, setPlatform] = useState<'native' | 'web'>('web');
+  const [permGranted, setPermGranted] = useState(false);
+  const [pending, setPending] = useState(0);
 
-  async function handleTestFire() {
-    // Find a task with a time today to test with
-    const task = todaysTimedTasks[0];
-    if (!task) {
-      setTestResult('No timed tasks today. Add a task with a time first.');
-      return;
+  useEffect(() => {
+    import('@/lib/notifications/platform').then(({ isNative }) => {
+      setPlatform(isNative() ? 'native' : 'web');
+    });
+    if (typeof Notification !== 'undefined') {
+      setPermGranted(Notification.permission === 'granted');
     }
-    setTestBusy(true);
-    try {
-      const result = testFireTaskNotification(task.id);
-      setTestResult(result.message);
-    } finally {
-      setTestBusy(false);
+    import('@/lib/notifications/service').then(async ({ getPendingNotifications }) => {
+      const p = await getPendingNotifications();
+      setPending(p.length);
+    });
+  }, []);
+
+  async function handleRequestPermission() {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      const result = await Notification.requestPermission();
+      setPermGranted(result === 'granted');
     }
   }
 
+  async function handleRescheduleAll() {
+    const { rescheduleAll } = await import('@/lib/notifications/scheduler');
+    await rescheduleAll();
+    const { getPendingNotifications } = await import('@/lib/notifications/service');
+    const p = await getPendingNotifications();
+    setPending(p.length);
+  }
+
   return (
-    <Card className="border-l-4 border-l-primary">
+    <Card className={cn(
+      'border-l-4',
+      platform === 'native' ? 'border-l-emerald-500' : 'border-l-amber-500',
+    )}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <AlarmClock className="h-4 w-4 text-primary" />
-              Auto Task Notifications
+              Notification System
             </CardTitle>
             <CardDescription>
-              Fire notifications automatically when task time arrives (scans every 30s)
+              {platform === 'native'
+                ? 'Native Android notifications — channels, actions, background scheduling'
+                : 'Web mode — browser notifications (install APK for full native experience)'}
             </CardDescription>
           </div>
           <Switch
@@ -415,72 +421,68 @@ function AutoTaskNotificationsCard() {
           />
         </div>
       </CardHeader>
-      {settings.autoTaskNotifications !== false && (
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Fire N minutes before task time</Label>
-              <Input
-                type="number"
-                min={0}
-                max={60}
-                value={settings.taskNotificationLeadMinutes ?? 0}
-                onChange={(e) => updateSettings({ taskNotificationLeadMinutes: parseInt(e.target.value || '0', 10) })}
-              />
-              <p className="text-[10px] text-muted-foreground">
-                0 = fire exactly at task time. 15 = fire 15 min early.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <div className="p-2 rounded-md bg-muted/50">
-                <div className="text-xs text-muted-foreground">Today's timed tasks</div>
-                <div className="text-lg font-bold">{todaysTimedTasks.length}</div>
-              </div>
-              <div className="p-2 rounded-md bg-muted/50">
-                <div className="text-xs text-muted-foreground">Firing in next hour</div>
-                <div className="text-lg font-bold">{upcomingCount}</div>
-              </div>
+      <CardContent className="space-y-3">
+        {/* Platform + permission status */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="p-2 rounded-md bg-muted/50">
+            <div className="text-xs text-muted-foreground">Platform</div>
+            <div className="text-sm font-bold">
+              {platform === 'native' ? '📱 Native (APK)' : '🌐 Web Browser'}
             </div>
           </div>
+          <div className="p-2 rounded-md bg-muted/50">
+            <div className="text-xs text-muted-foreground">Permission</div>
+            <div className={cn(
+              'text-sm font-bold',
+              permGranted ? 'text-emerald-500' : 'text-amber-500',
+            )}>
+              {permGranted ? '✅ Granted' : '⚠ Not granted'}
+            </div>
+          </div>
+        </div>
 
-          {/* Browser permission status */}
-          <div className="flex items-center justify-between p-2 rounded-md border">
-            <div>
-              <div className="text-sm font-medium">Browser notification permission</div>
-              <p className="text-[10px] text-muted-foreground">
-                Required for system pop-ups. In-app notifications work regardless.
-              </p>
-            </div>
-            <Badge variant="outline" className={
-              typeof Notification !== 'undefined' && Notification.permission === 'granted'
-                ? 'text-emerald-500 border-emerald-500/40'
-                : 'text-amber-500 border-amber-500/40'
-            }>
-              {typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'Granted' : 'Not granted'}
-            </Badge>
+        {/* Pending count */}
+        <div className="p-2 rounded-md bg-muted/50 flex items-center justify-between">
+          <div>
+            <div className="text-xs text-muted-foreground">Scheduled notifications</div>
+            <div className="text-lg font-bold">{pending}</div>
           </div>
+          <Button size="sm" variant="outline" onClick={handleRescheduleAll}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Reschedule All
+          </Button>
+        </div>
 
-          {/* Test button */}
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={handleTestFire} disabled={testBusy}>
-              <Play className="h-3.5 w-3.5 mr-1" />
-              {testBusy ? 'Firing...' : 'Test fire now'}
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              Fires a test notification for your first timed task today.
-            </span>
-          </div>
-          {testResult && (
-            <div className="text-xs p-2 rounded-md bg-primary/5 border border-primary/20">
-              {testResult}
-            </div>
-          )}
+        {/* Lead time */}
+        <div className="grid gap-2">
+          <Label>Reminder lead time (minutes before task)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={60}
+            value={settings.taskNotificationLeadMinutes ?? 0}
+            onChange={(e) => updateSettings({ taskNotificationLeadMinutes: parseInt(e.target.value || '0', 10) })}
+          />
+          <p className="text-[10px] text-muted-foreground">
+            0 = fire at exact task time. 10 = also fire 10 min before. High/critical tasks also get 1-hour and 1-day reminders.
+          </p>
+        </div>
 
-          <div className="text-[10px] text-muted-foreground italic">
-            ℹ️ Notifications fire automatically when task time arrives. To test immediately, click "Test fire now" or add a task with a time 2 minutes from now.
-          </div>
-        </CardContent>
-      )}
+        {/* Request permission button (web only) */}
+        {platform === 'web' && !permGranted && (
+          <Button size="sm" onClick={handleRequestPermission}>
+            <Bell className="h-3.5 w-3.5 mr-1" /> Enable Browser Notifications
+          </Button>
+        )}
+
+        {/* Reminder schedule info */}
+        <div className="text-[10px] text-muted-foreground italic space-y-0.5">
+          <div>📋 Task reminders: at task time + 10 min before (all), 1 hour + 1 day before (high/critical)</div>
+          <div>📅 Deadline alerts: 7 days, 3 days, 1 day, same day, last hour</div>
+          <div>✅ Habit reminders: daily at habit time</div>
+          <div>🌅 Morning brief: daily 7 AM · 🌙 Evening review: daily 10 PM</div>
+          <div>🌙 Quiet hours: {settings.autoTaskNotifications ? 'respected' : 'disabled'}</div>
+        </div>
+      </CardContent>
     </Card>
   );
 }

@@ -1,4 +1,5 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
 import { cn, todayISO } from '@/lib/utils';
@@ -27,7 +28,7 @@ interface NavItem {
   key: ViewKey;
   label: string;
   icon: typeof LayoutDashboard;
-  badge?: 'count' | 'wasted' | 'streak' | 'memories' | 'notifications' | 'recovery';
+  badge?: 'count' | 'wasted' | 'streak' | 'memories' | 'pending' | 'recovery';
   group: 'main' | 'life' | 'ai' | 'system';
 }
 
@@ -49,7 +50,7 @@ const NAV: NavItem[] = [
   { key: 'briefing',   label: 'Daily Briefing', icon: Coffee, group: 'ai' },
   { key: 'ai-planner', label: 'AI Planner',   icon: Sparkles, group: 'ai' },
   { key: 'memory',     label: 'AI Memory',     icon: Brain, badge: 'memories', group: 'ai' },
-  { key: 'notifications', label: 'Notifications', icon: Bell, badge: 'notifications', group: 'ai' },
+  { key: 'notifications', label: 'Notifications', icon: Bell, badge: 'pending', group: 'ai' },
   { key: 'notif-prefs',label: 'Notif Preferences', icon: Bell, group: 'ai' },
   { key: 'recovery',   label: 'Recovery Queue', icon: RotateCcw, badge: 'recovery', group: 'ai' },
   { key: 'ai-reports', label: 'AI Reports',   icon: FileText, group: 'ai' },
@@ -93,8 +94,17 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   // Active memory count
   const activeMemories = memories.filter((m) => !m.archived && !m.disabled).length;
 
-  // Pending notifications
-  const pendingNotifications = notifications.filter((n) => n.status === 'pending').length;
+  // Pending notifications (from notification log, not in-app store)
+  const [pendingNotifCount, setPendingNotifCount] = useState(0);
+  useEffect(() => {
+    import('@/lib/notifications/service').then(({ getNotificationLog }) => {
+      const log = getNotificationLog();
+      const recent = log.filter((e) => !e.action).slice(0, 99).length;
+      setPendingNotifCount(recent);
+    });
+  }, [notifications]);
+
+  // Recovery queue count
   const recoveryQueue = useStore((s) => s.recoveryQueue);
   const recoveryCount = recoveryQueue.length;
 
@@ -231,10 +241,10 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
                       </span>
                     );
                   }
-                  if (item.badge === 'notifications' && pendingNotifications > 0) {
+                  if (item.badge === 'pending' && pendingNotifCount > 0) {
                     badge = (
                       <span className="ml-auto text-xs bg-red-500/15 text-red-500 rounded-full px-2 py-0.5 font-medium">
-                        {pendingNotifications}
+                        {pendingNotifCount}
                       </span>
                     );
                   }
