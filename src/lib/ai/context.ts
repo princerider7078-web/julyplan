@@ -1,7 +1,7 @@
 // Context Builder — assembles real-time data into AIContext for prompts.
-// Pulls from Supabase tables: tasks, habits, health_logs, finance_entries, journal_entries.
+// V3: uses semantic-ish memory retrieval to inject only relevant memories.
 import { supabase } from '../supabase/client';
-import { loadMemories } from './memory';
+import { retrieveRelevantMemories, getActiveMemories } from './memory';
 import type { AIContext } from './types';
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -16,7 +16,48 @@ function getLast7Days() {
   return arr;
 }
 
-export async function buildContext(userId: string): Promise<AIContext> {
+// Build context from local store (offline mode + default for online)
+// V3: retrieves memories relevant to the user's query, not all of them.
+export function buildLocalContext(opts: {
+  todayTasks?: AIContext['todayTasks'];
+  recentHabits?: AIContext['recentHabits'];
+  recentHealth?: AIContext['recentHealth'];
+  recentFinance?: AIContext['recentFinance'];
+  recentJournal?: AIContext['recentJournal'];
+  analytics?: AIContext['analytics'];
+  memories?: AIContext['memories'];
+  // V3: optional user query for semantic memory retrieval
+  userQuery?: string;
+}): AIContext {
+  // If userQuery is provided, retrieve relevant memories semantically.
+  // Otherwise fall back to whatever was passed in.
+  let memories = opts.memories;
+  if (opts.userQuery && !opts.memories) {
+    const retrieved = retrieveRelevantMemories(opts.userQuery, 8);
+    memories = retrieved.map((m) => ({
+      id: m.id,
+      memory_type: m.category,
+      memory_key: m.title,
+      memory_value: m.content,
+      confidence_score: m.confidence,
+      source_module: m.source,
+      last_used_at: m.lastUsedAt,
+    }));
+  }
+
+  return {
+    currentDate: todayISO(),
+    todayTasks: opts.todayTasks,
+    recentHabits: opts.recentHabits,
+    recentHealth: opts.recentHealth,
+    recentFinance: opts.recentFinance,
+    recentJournal: opts.recentJournal,
+    analytics: opts.analytics,
+    memories,
+  };
+}
+
+export async function buildContext(userId: string, userQuery?: string): Promise<AIContext> {
   const ctx: AIContext = { currentDate: todayISO() };
   if (!userId) return ctx;
 
@@ -52,14 +93,12 @@ export async function buildContext(userId: string): Promise<AIContext> {
       .order('created_at', { ascending: false })
       .limit(20);
     if (tasks && tasks.length) {
-      // Fetch today's completion logs
       const { data: logs } = await supabase
         .from('task_completion_logs')
         .select('task_id,completed')
         .eq('user_id', userId)
         .eq('log_date', today);
       const doneSet = new Set((logs ?? []).filter((l) => l.completed).map((l) => l.task_id));
-      // We don't have task_id in this select, so simpler: count from logs
       ctx.todayTasks = tasks.map((t) => ({
         title: t.title,
         priority: t.priority,
@@ -81,13 +120,12 @@ export async function buildContext(userId: string): Promise<AIContext> {
         .eq('user_id', userId)
         .eq('log_date', today);
       const todayDone = new Set((todayLogs ?? []).filter((l) => l.completed).map((l) => l.habit_id));
-      // Get last 30 days of logs for streak calc
-      const last30 = getLast7Days(); // simplified to last 7 for performance
+      const last7 = getLast7Days();
       const { data: recentLogs } = await supabase
         .from('habit_logs')
         .select('habit_id,log_date,completed')
         .eq('user_id', userId)
-        .in('log_date', last30);
+        .in('log_date', last7);
       ctx.recentHabits = habits.map((h) => {
         let streak = 0;
         const d = new Date();
@@ -100,7 +138,7 @@ export async function buildContext(userId: string): Promise<AIContext> {
       });
     }
 
-    // Recent health (last 7 days avg)
+    // Recent health
     const last7 = getLast7Days();
     const { data: health } = await supabase
       .from('health_logs')
@@ -147,26 +185,10 @@ export async function buildContext(userId: string): Promise<AIContext> {
         content: (j.content ?? '').slice(0, 100),
       }));
     }
-
-    // Memories
-    ctx.memories = await loadMemories(userId, 15);
   } catch { /* silent — return partial context */ }
 
   return ctx;
 }
 
-// Build context from local store (offline mode) — used when not authenticated
-export function buildLocalContext(opts: {
-  todayTasks?: AIContext['todayTasks'];
-  recentHabits?: AIContext['recentHabits'];
-  recentHealth?: AIContext['recentHealth'];
-  recentFinance?: AIContext['recentFinance'];
-  recentJournal?: AIContext['recentJournal'];
-  analytics?: AIContext['analytics'];
-  memories?: AIContext['memories'];
-}): AIContext {
-  return {
-    currentDate: todayISO(),
-    ...opts,
-  };
-}
+export { retrieveRelevantMemories, getActiveMemories };
+

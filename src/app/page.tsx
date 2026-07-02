@@ -22,6 +22,11 @@ import { AIReportsView } from '@/components/app/views/ai-reports';
 import { JournalView } from '@/components/app/views/journal';
 import { KnowledgeView } from '@/components/app/views/knowledge';
 import { DevControlsView } from '@/components/app/views/dev-controls';
+// V3 views
+import { MemoryManagerView } from '@/components/app/views/memory-manager';
+import { BriefingView } from '@/components/app/views/briefing';
+import { NotificationCenterView } from '@/components/app/views/notification-center';
+import { ConversationHistoryView } from '@/components/app/views/conversation-history';
 import { Button } from '@/components/ui/button';
 import { Menu, Plus, Bell, Loader2 } from 'lucide-react';
 import { todayISO, formatDateLong } from '@/lib/utils';
@@ -164,6 +169,10 @@ export default function Home() {
               {view === 'journal' && 'Journal'}
               {view === 'knowledge' && 'Knowledge Base'}
               {view === 'dev' && 'AI Controls'}
+              {view === 'memory' && 'AI Memory Manager'}
+              {view === 'briefing' && 'Daily Briefing'}
+              {view === 'notifications' && 'AI Notification Center'}
+              {view === 'history' && 'Conversation History'}
             </div>
             <div className="text-xs text-muted-foreground truncate">
               {formatDateLong(today)}
@@ -205,6 +214,11 @@ export default function Home() {
           {view === 'journal' && <JournalView />}
           {view === 'knowledge' && <KnowledgeView />}
           {view === 'dev' && <DevControlsView />}
+          {/* V3 views */}
+          {view === 'memory' && <MemoryManagerView />}
+          {view === 'briefing' && <BriefingView onNavigate={setView} />}
+          {view === 'notifications' && <NotificationCenterView />}
+          {view === 'history' && <ConversationHistoryView />}
         </main>
 
         {/* Footer */}

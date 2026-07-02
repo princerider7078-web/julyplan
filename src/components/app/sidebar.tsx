@@ -8,6 +8,7 @@ import {
   LayoutDashboard, ListChecks, FolderTree, Sunrise, Repeat,
   Wallet, CalendarDays, BarChart3, Settings, Flame, X,
   Brain, Sparkles, BookOpen, BookMarked, Cpu, FileText, LogOut,
+  Bell, MessageCircle, Coffee,
 } from 'lucide-react';
 import { SectionIcon } from './icon';
 
@@ -16,15 +17,16 @@ export type ViewKey =
   | 'routine' | 'habits' | 'finance' | 'monthly'
   | 'reports' | 'settings'
   | 'ai-chat' | 'ai-planner' | 'ai-reports'
-  | 'journal' | 'knowledge' | 'dev';
+  | 'journal' | 'knowledge' | 'dev'
+  // V3 new views
+  | 'memory' | 'briefing' | 'notifications' | 'history';
 
 interface NavItem {
   key: ViewKey;
   label: string;
   icon: typeof LayoutDashboard;
-  badge?: 'count' | 'wasted' | 'streak';
+  badge?: 'count' | 'wasted' | 'streak' | 'memories' | 'notifications';
   group: 'main' | 'life' | 'ai' | 'system';
-  offlineOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
@@ -40,10 +42,14 @@ const NAV: NavItem[] = [
   { key: 'monthly',   label: 'July Plan',  icon: CalendarDays, badge: 'wasted', group: 'life' },
   { key: 'journal',   label: 'Journal',    icon: BookOpen, group: 'life' },
   { key: 'knowledge', label: 'Knowledge',  icon: BookMarked, group: 'life' },
-  // AI
+  // AI Brain
   { key: 'ai-chat',    label: 'AI Assistant', icon: Brain, group: 'ai' },
+  { key: 'briefing',   label: 'Daily Briefing', icon: Coffee, group: 'ai' },
   { key: 'ai-planner', label: 'AI Planner',   icon: Sparkles, group: 'ai' },
+  { key: 'memory',     label: 'AI Memory',     icon: Brain, badge: 'memories', group: 'ai' },
+  { key: 'notifications', label: 'Notifications', icon: Bell, badge: 'notifications', group: 'ai' },
   { key: 'ai-reports', label: 'AI Reports',   icon: FileText, group: 'ai' },
+  { key: 'history',    label: 'Chat History', icon: MessageCircle, group: 'ai' },
   // System
   { key: 'reports',   label: 'Analytics',  icon: BarChart3, group: 'system' },
   { key: 'dev',       label: 'AI Controls', icon: Cpu, group: 'system' },
@@ -68,6 +74,8 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   const tasks = useStore((s) => s.tasks);
   const habits = useStore((s) => s.habits);
   const settings = useStore((s) => s.settings);
+  const memories = useStore((s) => s.memories);
+  const notifications = useStore((s) => s.aiNotifications);
   const { profile, isOffline, signOut } = useAuth();
   const today = todayISO();
 
@@ -77,6 +85,12 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   ).length + tasks.filter(
     (t) => t.status === 'pending' && t.repeatRule === 'none' && !t.completionLog?.[today],
   ).length;
+
+  // Active memory count
+  const activeMemories = memories.filter((m) => !m.archived && !m.disabled).length;
+
+  // Pending notifications
+  const pendingNotifications = notifications.filter((n) => n.status === 'pending').length;
 
   // Current habit streak (best of all habits)
   function getStreak(log: Record<string, boolean> | undefined) {
@@ -201,6 +215,20 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
                         danger ? 'bg-red-500/20 text-red-500' : 'bg-muted text-muted-foreground',
                       )}>
                         {wasted}/{settings.maxWastedDays}
+                      </span>
+                    );
+                  }
+                  if (item.badge === 'memories' && activeMemories > 0) {
+                    badge = (
+                      <span className="ml-auto text-xs bg-violet-500/15 text-violet-500 rounded-full px-2 py-0.5 font-medium">
+                        {activeMemories}
+                      </span>
+                    );
+                  }
+                  if (item.badge === 'notifications' && pendingNotifications > 0) {
+                    badge = (
+                      <span className="ml-auto text-xs bg-red-500/15 text-red-500 rounded-full px-2 py-0.5 font-medium">
+                        {pendingNotifications}
                       </span>
                     );
                   }

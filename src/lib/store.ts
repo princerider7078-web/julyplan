@@ -7,6 +7,8 @@ import type {
   Task, Section, Habit, RoutineBlock, FinanceEntry, FinanceTarget,
   AppSettings, AppState, SubSection, ChecklistItem, Priority, TaskType,
   RepeatRule, JournalEntry, KnowledgeNote, AIChatMessageStore,
+  AIMemoryItem, MemoryCategory, MemoryImportance, MemorySource,
+  ConversationSummary, AINotification,
 } from './types';
 import {
   DEFAULT_SECTIONS, DEFAULT_HABITS, DEFAULT_ROUTINE,
@@ -68,6 +70,18 @@ interface StoreActions {
   // ai chat (V2)
   appendAIChat: (msg: Omit<AIChatMessageStore, 'id' | 'timestamp'>) => void;
   clearAIChat: () => void;
+  // memories (V3)
+  addMemory: (input: Omit<AIMemoryItem, 'id' | 'createdAt' | 'updatedAt' | 'useCount'>) => string;
+  updateMemory: (id: string, patch: Partial<AIMemoryItem>) => void;
+  deleteMemory: (id: string) => void;
+  mergeMemories: (sourceId: string, targetId: string) => void;
+  touchMemory: (id: string) => void;  // update lastUsedAt + useCount
+  // conversation summaries (V3)
+  addConversationSummary: (input: Omit<ConversationSummary, 'id' | 'created_at'>) => void;
+  // ai notifications (V3)
+  addAINotification: (input: Omit<AINotification, 'id' | 'created_at'>) => string;
+  updateAINotification: (id: string, patch: Partial<AINotification>) => void;
+  dismissAINotification: (id: string) => void;
   // settings
   updateSettings: (patch: Partial<AppSettings>) => void;
   // system
@@ -91,6 +105,9 @@ const initialAppState: AppState = {
   journal: [],
   knowledgeNotes: [],
   aiChatHistory: [],
+  memories: [],
+  conversationSummaries: [],
+  aiNotifications: [],
   lastOpened: null,
   initialized: true,
 };
@@ -375,9 +392,105 @@ export const useStore = create<Store>()(
           aiChatHistory: [
             ...s.aiChatHistory,
             { id: `c-${uuid().slice(0, 8)}`, timestamp: new Date().toISOString(), ...msg },
-          ].slice(-100), // keep last 100 messages
+          ].slice(-200), // keep last 200 messages
         })),
       clearAIChat: () => set({ aiChatHistory: [] }),
+
+      // ---------- Memories (V3) ----------
+      addMemory: (input) => {
+        const id = `m-${uuid().slice(0, 8)}`;
+        const now = new Date().toISOString();
+        const memory: AIMemoryItem = {
+          id,
+          title: input.title,
+          content: input.content,
+          category: input.category,
+          importance: input.importance,
+          confidence: input.confidence,
+          source: input.source,
+          pinned: input.pinned ?? false,
+          favorite: input.favorite ?? false,
+          archived: input.archived ?? false,
+          locked: input.locked ?? false,
+          disabled: input.disabled ?? false,
+          tags: input.tags ?? [],
+          lastUsedAt: now,
+          useCount: 0,
+          createdAt: now,
+          updatedAt: now,
+          embedding: input.embedding,
+        };
+        set((s) => ({ memories: [memory, ...s.memories] }));
+        return id;
+      },
+      updateMemory: (id, patch) =>
+        set((s) => ({
+          memories: s.memories.map((m) =>
+            m.id === id
+              ? { ...m, ...patch, updatedAt: new Date().toISOString() }
+              : m,
+          ),
+        })),
+      deleteMemory: (id) =>
+        set((s) => ({ memories: s.memories.filter((m) => m.id !== id) })),
+      mergeMemories: (sourceId, targetId) =>
+        set((s) => {
+          const source = s.memories.find((m) => m.id === sourceId);
+          const target = s.memories.find((m) => m.id === targetId);
+          if (!source || !target) return s;
+          const merged: AIMemoryItem = {
+            ...target,
+            content: `${target.content}\n\n[Merged from "${source.title}": ${source.content}]`,
+            tags: Array.from(new Set([...target.tags, ...source.tags])),
+            updatedAt: new Date().toISOString(),
+          };
+          return {
+            memories: s.memories
+              .map((m) => (m.id === targetId ? merged : m))
+              .filter((m) => m.id !== sourceId),
+          };
+        }),
+      touchMemory: (id) =>
+        set((s) => ({
+          memories: s.memories.map((m) =>
+            m.id === id
+              ? { ...m, lastUsedAt: new Date().toISOString(), useCount: m.useCount + 1 }
+              : m,
+          ),
+        })),
+
+      // ---------- Conversation Summaries (V3) ----------
+      addConversationSummary: (input) =>
+        set((s) => ({
+          conversationSummaries: [
+            { id: `cs-${uuid().slice(0, 8)}`, created_at: new Date().toISOString(), ...input },
+            ...s.conversationSummaries,
+          ].slice(0, 50),
+        })),
+
+      // ---------- AI Notifications (V3) ----------
+      addAINotification: (input) => {
+        const id = `n-${uuid().slice(0, 8)}`;
+        const notif: AINotification = {
+          id,
+          created_at: new Date().toISOString(),
+          ...input,
+        };
+        set((s) => ({ aiNotifications: [notif, ...s.aiNotifications].slice(0, 100) }));
+        return id;
+      },
+      updateAINotification: (id, patch) =>
+        set((s) => ({
+          aiNotifications: s.aiNotifications.map((n) =>
+            n.id === id ? { ...n, ...patch } : n,
+          ),
+        })),
+      dismissAINotification: (id) =>
+        set((s) => ({
+          aiNotifications: s.aiNotifications.map((n) =>
+            n.id === id ? { ...n, status: 'dismissed' as const } : n,
+          ),
+        })),
 
       // ---------- Settings ----------
       updateSettings: (patch) =>
@@ -399,6 +512,9 @@ export const useStore = create<Store>()(
           journal: s.journal,
           knowledgeNotes: s.knowledgeNotes,
           aiChatHistory: s.aiChatHistory,
+          memories: s.memories,
+          conversationSummaries: s.conversationSummaries,
+          aiNotifications: s.aiNotifications,
           settings: s.settings,
         }, null, 2);
       },
@@ -417,6 +533,9 @@ export const useStore = create<Store>()(
             journal: data.journal ?? [],
             knowledgeNotes: data.knowledgeNotes ?? [],
             aiChatHistory: data.aiChatHistory ?? [],
+            memories: data.memories ?? [],
+            conversationSummaries: data.conversationSummaries ?? [],
+            aiNotifications: data.aiNotifications ?? [],
             settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
           });
           return true;
@@ -431,10 +550,10 @@ export const useStore = create<Store>()(
     {
       name: 'july-plan-store',
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       // Backfill missing fields from defaults — important when migrating
-      // from V1 (no AI settings) to V2 (with AI settings). Without this,
-      // settings.aiTemperature is undefined and crashes .toFixed(1).
+      // between V1 → V2 → V3 schemas. Without this, settings.aiTemperature
+      // is undefined and crashes .toFixed(1).
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppState>;
         const c = current as AppState;
@@ -443,6 +562,10 @@ export const useStore = create<Store>()(
           ...p,
           // Deep-merge settings so missing AI fields fall back to defaults
           settings: { ...c.settings, ...(p.settings ?? {}) },
+          // Ensure V3 arrays exist even on old persisted state
+          memories: p.memories ?? c.memories,
+          conversationSummaries: p.conversationSummaries ?? c.conversationSummaries,
+          aiNotifications: p.aiNotifications ?? c.aiNotifications,
         };
       },
     },

@@ -130,6 +130,53 @@ export interface AIChatMessageStore {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  // Optional: link to memory extracted from this message
+  extracted_memory_ids?: string[];
+  // Optional: conversation session id (for grouping)
+  session_id?: string;
+}
+
+// ---------- Long-term AI Memory (V3) ----------
+export type MemoryCategory =
+  | 'personal'      // Personal Information
+  | 'goals'         // Goals
+  | 'habits'        // Habits
+  | 'routine'       // Daily Routine
+  | 'preferences'   // Preferences
+  | 'health'        // Health
+  | 'work'          // Work
+  | 'education'     // Education
+  | 'relationships' // Relationships
+  | 'skills'        // Skills
+  | 'projects'      // Projects
+  | 'events'        // Important Events
+  | 'custom';       // Custom Memories
+
+export type MemorySource = 'chat' | 'manual' | 'imported';
+export type MemoryImportance = 'low' | 'medium' | 'high' | 'critical';
+
+export interface AIMemoryItem {
+  id: string;
+  title: string;
+  content: string;
+  category: MemoryCategory;
+  importance: MemoryImportance;
+  confidence: number;          // 0.0 - 1.0
+  source: MemorySource;
+  // State flags
+  pinned: boolean;             // user-pinned (always included in context)
+  favorite: boolean;
+  archived: boolean;
+  locked: boolean;             // locked = cannot be auto-modified by AI
+  disabled: boolean;           // disabled = excluded from context but kept
+  // Metadata
+  tags: string[];
+  lastUsedAt?: string;
+  useCount: number;
+  createdAt: string;
+  updatedAt: string;
+  // Optional embedding for semantic search (stored as number[])
+  embedding?: number[];
 }
 
 export interface AppSettings {
@@ -161,6 +208,32 @@ export interface AppState {
   journal: JournalEntry[];
   knowledgeNotes: KnowledgeNote[];
   aiChatHistory: AIChatMessageStore[];
+  // V3: long-term memory + conversation summaries + AI-generated notifications
+  memories: AIMemoryItem[];
+  conversationSummaries: ConversationSummary[];
+  aiNotifications: AINotification[];
   lastOpened: string | null;
   initialized: boolean;
+}
+
+export interface ConversationSummary {
+  id: string;
+  session_id: string;
+  summary: string;
+  message_count: number;
+  created_at: string;
+}
+
+export interface AINotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'task' | 'habit' | 'briefing' | 'review' | 'goal' | 'motivation' | 'health' | 'hydration' | 'workout' | 'sleep' | 'study';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  scheduled_at: string;       // ISO datetime
+  status: 'pending' | 'shown' | 'dismissed' | 'snoozed' | 'completed';
+  ai_generated: boolean;
+  linked_entity_type?: 'task' | 'habit' | 'memory';
+  linked_entity_id?: string;
+  created_at: string;
 }

@@ -3,24 +3,24 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
 import { aiChat, aiExtractMemories } from '@/lib/ai';
-import { saveMemory, loadMemories, clearAllMemories } from '@/lib/ai/memory';
-import { buildLocalContext } from '@/lib/ai/context';
+import { buildLocalContext, retrieveRelevantMemories } from '@/lib/ai/context';
+import { parseCommand, executeMemoryCommand, detectCategory } from '@/lib/ai/commands';
+import { parseTaskAction, executeTaskAction } from '@/lib/ai/task-manager';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  Brain, Send, Loader2, Trash2, Sparkles, User, Bot, Cpu, Zap,
+  Brain, Send, Loader2, Trash2, Sparkles, User, Bot, Cpu, HelpCircle,
 } from 'lucide-react';
-import { todayISO } from '@/lib/utils';
-import type { AIMemory } from '@/lib/ai/types';
+import { todayISO, cn } from '@/lib/utils';
 
 const SUGGESTIONS = [
   'What should I focus on today?',
-  'Build my recovery plan',
-  'Why am I low on energy?',
-  'What habits am I missing?',
+  'Remember that I am preparing for BCA',
+  'Add gym tomorrow 7 AM',
+  'Show my memories',
+  'Help',
   'Generate my evening plan',
 ];
 
@@ -32,22 +32,16 @@ export function AIChatView() {
   const chatHistory = useStore((s) => s.aiChatHistory);
   const appendAIChat = useStore((s) => s.appendAIChat);
   const clearAIChat = useStore((s) => s.clearAIChat);
+  const addMemory = useStore((s) => s.addMemory);
+  const memories = useStore((s) => s.memories);
 
   const { profile, isOffline } = useAuth();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [memories, setMemories] = useState<AIMemory[]>([]);
-  const [showMemories, setShowMemories] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Load memories on mount (when authed)
-  useEffect(() => {
-    if (profile?.id && !isOffline) {
-      loadMemories(profile.id).then(setMemories);
-    }
-  }, [profile, isOffline]);
 
   // Auto-scroll to bottom on new message
   useEffect(() => {
@@ -56,15 +50,65 @@ export function AIChatView() {
     }
   }, [chatHistory]);
 
-  async function handleSend(message: string) {
-    if (!message.trim() || busy) return;
+  async function handleSend(rawMessage: string) {
+    const message = rawMessage.trim();
+    if (!message || busy) return;
     setError(null);
-    appendAIChat({ role: 'user', content: message.trim() });
+    appendAIChat({ role: 'user', content: message });
     setInput('');
     setBusy(true);
 
     try {
-      // Build context from local store
+      // ----- Step 1: Check for chat commands (memory/task) -----
+      const cmd = parseCommand(message);
+
+      // Memory commands
+      if (cmd.type !== 'none' && cmd.type !== 'task_action' && cmd.type !== 'help') {
+        const result = executeMemoryCommand(cmd);
+        if (result.message) {
+          appendAIChat({ role: 'assistant', content: result.message });
+        }
+        setBusy(false);
+        return;
+      }
+
+      // Help command
+      if (cmd.type === 'help') {
+        const result = executeMemoryCommand(cmd);
+        appendAIChat({ role: 'assistant', content: result.message });
+        setShowHelp(true);
+        setBusy(false);
+        return;
+      }
+
+      // Task commands (natural language CRUD)
+      if (cmd.type === 'task_action') {
+        const action = await parseTaskAction(message, undefined, {
+          profile: {
+            provider: settings.aiProvider ?? 'zai',
+            model_chat: settings.aiModelChat ?? 'glm-4.6',
+            model_planning: settings.aiModelPlanning ?? 'glm-4.6',
+            model_reports: settings.aiModelReports ?? 'glm-4.6',
+            fallback_model: 'glm-4.5',
+            temperature: settings.aiTemperature ?? 0.7,
+            max_tokens: settings.aiMaxTokens ?? 1500,
+            prompt_style: 'coach',
+            enabled_modules_json: settings.aiEnabledModules ?? [],
+          },
+          userId: profile?.id,
+        });
+        if (action.action !== 'unknown') {
+          const result = executeTaskAction(action);
+          if (result.message) {
+            appendAIChat({ role: 'assistant', content: result.message });
+          }
+          setBusy(false);
+          return;
+        }
+        // If unknown, fall through to regular AI chat
+      }
+
+      // ----- Step 2: Regular AI chat with memory retrieval -----
       const today = todayISO();
       const ctx = buildLocalContext({
         todayTasks: tasks
@@ -90,10 +134,10 @@ export function AIChatView() {
           monthSpend: finance.filter((f) => f.type === 'expense' && f.date.slice(0, 7) === today.slice(0, 7)).reduce((s, f) => s + f.amount, 0),
           budget: 5000,
         },
-        memories,
+        // V3: semantic memory retrieval — only inject relevant memories
+        userQuery: message,
       });
 
-      // History in the format the AI expects
       const history = chatHistory
         .slice(-6)
         .map((m) => ({ role: m.role, content: m.content }));
@@ -115,33 +159,58 @@ export function AIChatView() {
 
       appendAIChat({ role: 'assistant', content: response.text });
 
-      // If authed, try to extract durable memories from this exchange
-      if (profile?.id && !isOffline) {
-        try {
-          const conv = `User: ${message}\n\nAssistant: ${response.text}`;
-          const extraction = await aiExtractMemories(conv);
-          if (Array.isArray(extraction.json)) {
-            for (const m of extraction.json as AIMemory[]) {
-              if (m.memory_type && m.memory_key && m.memory_value) {
-                await saveMemory(profile.id, m);
+      // ----- Step 3: Auto-extract durable memories from the exchange -----
+      try {
+        const conv = `User: ${message}\n\nAssistant: ${response.text}`;
+        const extraction = await aiExtractMemories(conv, {
+          profile: {
+            provider: settings.aiProvider ?? 'zai',
+            model_chat: settings.aiModelChat ?? 'glm-4.6',
+            model_planning: settings.aiModelPlanning ?? 'glm-4.6',
+            model_reports: settings.aiModelReports ?? 'glm-4.6',
+            fallback_model: 'glm-4.5',
+            temperature: 0.1, // deterministic for extraction
+            max_tokens: 800,
+            prompt_style: 'coach',
+            enabled_modules_json: settings.aiEnabledModules ?? [],
+          },
+          userId: profile?.id,
+        });
+
+        if (Array.isArray(extraction.json)) {
+          const extracted = extraction.json as Array<{
+            memory_type?: string;
+            memory_key?: string;
+            memory_value?: string;
+            confidence_score?: number;
+          }>;
+          for (const m of extracted) {
+            if (m.memory_type && m.memory_key && m.memory_value) {
+              // Avoid duplicates — check if similar memory exists
+              const existing = memories.find(
+                (existing) =>
+                  existing.title.toLowerCase() === m.memory_key!.toLowerCase() ||
+                  existing.content.toLowerCase() === m.memory_value!.toLowerCase(),
+              );
+              if (!existing) {
+                addMemory({
+                  title: m.memory_key,
+                  content: m.memory_value,
+                  category: (m.memory_type as ReturnType<typeof detectCategory>) ?? 'custom',
+                  importance: 'medium',
+                  confidence: m.confidence_score ?? 0.6,
+                  source: 'chat',
+                });
               }
             }
-            // Refresh memories list
-            loadMemories(profile.id).then(setMemories);
           }
-        } catch { /* silent */ }
-      }
+        }
+      } catch { /* silent — memory extraction is best-effort */ }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'AI request failed');
     } finally {
       setBusy(false);
     }
-  }
-
-  async function handleClearMemories() {
-    if (!profile?.id) return;
-    await clearAllMemories(profile.id);
-    setMemories([]);
   }
 
   return (
@@ -156,17 +225,18 @@ export function AIChatView() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Provider: <span className="font-medium">{settings.aiProvider}</span> ·
-            Model: <span className="font-medium">{settings.aiModelChat}</span>
-            {isOffline && <span className="text-amber-500"> · offline mode</span>}
+            Model: <span className="font-medium">{settings.aiModelChat}</span> ·
+            <span className="ml-1">{memories.filter((m) => !m.archived && !m.disabled).length} memories</span>
+            {isOffline && <span className="text-amber-500"> · offline</span>}
           </p>
         </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowMemories(!showMemories)}
+            onClick={() => setShowHelp(!showHelp)}
           >
-            <Cpu className="h-3.5 w-3.5 mr-1" /> Memory ({memories.length})
+            <HelpCircle className="h-3.5 w-3.5 mr-1" /> Commands
           </Button>
           <Button variant="ghost" size="icon" onClick={() => clearAIChat()} title="Clear chat">
             <Trash2 className="h-4 w-4" />
@@ -174,39 +244,36 @@ export function AIChatView() {
         </div>
       </div>
 
-      {/* Memory panel */}
-      {showMemories && (
+      {/* Help panel */}
+      {showHelp && (
         <Card className="shrink-0">
-          <CardHeader className="pb-2">
+          <CardContent className="p-4 text-sm space-y-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm">AI Memory</CardTitle>
-              {memories.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={handleClearMemories} className="text-red-500">
-                  Clear all
-                </Button>
-              )}
+              <h3 className="font-semibold">AI Commands</h3>
+              <Button variant="ghost" size="sm" onClick={() => setShowHelp(false)}>Close</Button>
             </div>
-            <CardDescription>
-              Durable facts the AI remembers about you. Stored in Supabase, not in the model.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {memories.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">
-                {isOffline
-                  ? 'Memory requires sign-in. Switch from offline mode in Settings.'
-                  : 'No memories yet. As you chat, the AI will extract durable facts.'}
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto scroll-thin">
-                {memories.map((m) => (
-                  <Badge key={m.id} variant="secondary" className="text-xs">
-                    <span className="opacity-60 mr-1">{m.memory_type}:</span>
-                    {m.memory_value.slice(0, 60)}
-                  </Badge>
-                ))}
+            <div className="grid md:grid-cols-2 gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">Memory</div>
+                <ul className="text-xs space-y-1">
+                  <li><code className="bg-muted px-1 rounded">remember that I wake up at 5 AM</code></li>
+                  <li><code className="bg-muted px-1 rounded">forget my coffee preference</code></li>
+                  <li><code className="bg-muted px-1 rounded">show my memories</code></li>
+                  <li><code className="bg-muted px-1 rounded">search memories for coding</code></li>
+                  <li><code className="bg-muted px-1 rounded">summarize my memories</code></li>
+                </ul>
               </div>
-            )}
+              <div>
+                <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">Tasks</div>
+                <ul className="text-xs space-y-1">
+                  <li><code className="bg-muted px-1 rounded">add gym tomorrow 7 AM</code></li>
+                  <li><code className="bg-muted px-1 rounded">delete today's workout</code></li>
+                  <li><code className="bg-muted px-1 rounded">complete grocery task</code></li>
+                  <li><code className="bg-muted px-1 rounded">move meeting to Friday</code></li>
+                  <li><code className="bg-muted px-1 rounded">show today's tasks</code></li>
+                </ul>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -226,7 +293,7 @@ export function AIChatView() {
                 <div>
                   <h3 className="font-semibold">Ask your AI coach</h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    I know your tasks, habits, health, and finance. Ask anything.
+                    I remember everything you tell me. I can manage tasks, set reminders, and use your memories to answer personally.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-center max-w-md">
@@ -298,7 +365,7 @@ export function AIChatView() {
                 handleSend(input);
               }
             }}
-            placeholder="Ask anything about your plan, habits, or progress..."
+            placeholder="Ask anything, or try: 'remember that...', 'add task tomorrow 7 AM', 'show memories'..."
             disabled={busy}
           />
           <Button onClick={() => handleSend(input)} disabled={busy || !input.trim()}>
