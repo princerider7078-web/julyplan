@@ -196,6 +196,9 @@ export interface AppSettings {
   aiEnabledModules: string[];
   // V3.1: AI backend URL for APK mode (empty = use relative /api/ai for web)
   aiBackendUrl: string;
+  // V4.1: auto-fire notifications when task time arrives
+  autoTaskNotifications: boolean;
+  taskNotificationLeadMinutes: number;  // fire N minutes before task time
 }
 
 export interface AppState {

@@ -1,7 +1,8 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { refreshLearningProfile } from '@/lib/ai/learning-engine';
+import { testFireTaskNotification, getUpcomingTaskCount } from '@/lib/ai/notification-scheduler';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -12,10 +13,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Bell, Moon, Volume2, Brain, Clock, Layers, TrendingUp, Zap,
+  Bell, Moon, Volume2, Brain, Clock, Layers, TrendingUp, Zap, AlarmClock, Play,
 } from 'lucide-react';
 import type { NotificationCategory, NotificationTone } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, todayISO } from '@/lib/utils';
 
 const TONES: { value: NotificationTone; label: string; example: string }[] = [
   { value: 'professional', label: 'Professional', example: '"Coding starts in 15 min. → Suggested based on your 9-11 PM productivity."' },
@@ -62,6 +63,9 @@ export function NotificationPreferencesView() {
           The AI adapts to your behavior — tone, timing, and frequency tune themselves over time.
         </p>
       </div>
+
+      {/* Auto Task Notifications (V4.1) */}
+      <AutoTaskNotificationsCard />
 
       {/* Tone */}
       <Card>
@@ -357,5 +361,126 @@ export function NotificationPreferencesView() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ─── V4.1: Auto Task Notifications card ───
+function AutoTaskNotificationsCard() {
+  const settings = useStore((s) => s.settings);
+  const updateSettings = useStore((s) => s.updateSettings);
+  const tasks = useStore((s) => s.tasks);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
+
+  const today = todayISO();
+  // Tasks with a time today (not completed)
+  const todaysTimedTasks = tasks.filter(
+    (t) => t.status !== 'archived' && t.time && !t.completionLog?.[today]
+      && (t.repeatRule !== 'none' || t.startDate === today),
+  );
+  const upcomingCount = getUpcomingTaskCount();
+
+  async function handleTestFire() {
+    // Find a task with a time today to test with
+    const task = todaysTimedTasks[0];
+    if (!task) {
+      setTestResult('No timed tasks today. Add a task with a time first.');
+      return;
+    }
+    setTestBusy(true);
+    try {
+      const result = testFireTaskNotification(task.id);
+      setTestResult(result.message);
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
+  return (
+    <Card className="border-l-4 border-l-primary">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlarmClock className="h-4 w-4 text-primary" />
+              Auto Task Notifications
+            </CardTitle>
+            <CardDescription>
+              Fire notifications automatically when task time arrives (scans every 30s)
+            </CardDescription>
+          </div>
+          <Switch
+            checked={settings.autoTaskNotifications ?? true}
+            onCheckedChange={(v) => updateSettings({ autoTaskNotifications: v })}
+          />
+        </div>
+      </CardHeader>
+      {settings.autoTaskNotifications !== false && (
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label>Fire N minutes before task time</Label>
+              <Input
+                type="number"
+                min={0}
+                max={60}
+                value={settings.taskNotificationLeadMinutes ?? 0}
+                onChange={(e) => updateSettings({ taskNotificationLeadMinutes: parseInt(e.target.value || '0', 10) })}
+              />
+              <p className="text-[10px] text-muted-foreground">
+                0 = fire exactly at task time. 15 = fire 15 min early.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <div className="p-2 rounded-md bg-muted/50">
+                <div className="text-xs text-muted-foreground">Today's timed tasks</div>
+                <div className="text-lg font-bold">{todaysTimedTasks.length}</div>
+              </div>
+              <div className="p-2 rounded-md bg-muted/50">
+                <div className="text-xs text-muted-foreground">Firing in next hour</div>
+                <div className="text-lg font-bold">{upcomingCount}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Browser permission status */}
+          <div className="flex items-center justify-between p-2 rounded-md border">
+            <div>
+              <div className="text-sm font-medium">Browser notification permission</div>
+              <p className="text-[10px] text-muted-foreground">
+                Required for system pop-ups. In-app notifications work regardless.
+              </p>
+            </div>
+            <Badge variant="outline" className={
+              typeof Notification !== 'undefined' && Notification.permission === 'granted'
+                ? 'text-emerald-500 border-emerald-500/40'
+                : 'text-amber-500 border-amber-500/40'
+            }>
+              {typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'Granted' : 'Not granted'}
+            </Badge>
+          </div>
+
+          {/* Test button */}
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handleTestFire} disabled={testBusy}>
+              <Play className="h-3.5 w-3.5 mr-1" />
+              {testBusy ? 'Firing...' : 'Test fire now'}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Fires a test notification for your first timed task today.
+            </span>
+          </div>
+          {testResult && (
+            <div className="text-xs p-2 rounded-md bg-primary/5 border border-primary/20">
+              {testResult}
+            </div>
+          )}
+
+          <div className="text-[10px] text-muted-foreground italic">
+            ℹ️ Notifications fire automatically when task time arrives. To test immediately, click "Test fire now" or add a task with a time 2 minutes from now.
+          </div>
+        </CardContent>
+      )}
+    </Card>
   );
 }

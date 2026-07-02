@@ -56,34 +56,34 @@ export default function Home() {
     }
   }, [profile, isOffline]);
 
-  // ---------- Offline reminder system ----------
-  useEffect(() => {
-    if (!notificationsEnabled) return;
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    if (Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
-  }, [notificationsEnabled]);
+  // ---------- Auto-notification scheduler (V4.1) ----------
+  // Scans tasks every 30s. When task.time arrives, fires:
+  //   1. Browser/Android system Notification
+  //   2. In-app notification (visible in Notification Center with AI reasoning)
+  //   3. Sound chime
+  // Respects quiet hours, learning profile, dedup per day.
+  const autoTaskNotifications = useStore((s) => s.settings.autoTaskNotifications);
 
   useEffect(() => {
-    if (!notificationsEnabled) return;
-    const interval = setInterval(() => {
-      if (typeof window === 'undefined' || !('Notification' in window)) return;
-      if (Notification.permission !== 'granted') return;
-      const now = new Date();
-      const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const today = todayISO();
-      const due = tasks.filter(
-        (t) => t.reminderTime === hhmm && t.status !== 'archived' && !t.completionLog?.[today],
-      );
-      due.forEach((t) => {
-        try {
-          new Notification('July Plan reminder', { body: t.title, tag: t.id });
-        } catch { /* ignore */ }
-      });
-    }, 60_000);
-    return () => clearInterval(interval);
-  }, [notificationsEnabled, tasks]);
+    if (!autoTaskNotifications || !notificationsEnabled) return;
+    if (typeof window === 'undefined') return;
+
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    // Start the scheduler (lazy import to avoid SSR issues)
+    let cleanup: (() => void) | undefined;
+    import('@/lib/ai/notification-scheduler').then(({ startAutoNotificationScheduler, stopAutoNotificationScheduler }) => {
+      startAutoNotificationScheduler();
+      cleanup = stopAutoNotificationScheduler;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [autoTaskNotifications, notificationsEnabled]);
 
   function playCompleteSound() {
     if (!soundEnabled) return;

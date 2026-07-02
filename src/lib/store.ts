@@ -32,6 +32,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiMaxTokens: 1500,
   aiEnabledModules: ['tasks', 'habits', 'health', 'finance', 'journal'],
   aiBackendUrl: '',
+  // V4.1: auto-fire notifications when task time arrives
+  autoTaskNotifications: true,
+  taskNotificationLeadMinutes: 0,  // 0 = fire exactly at task time
 };
 
 // V4: Default notification preferences — smart, learning-enabled
@@ -715,9 +718,9 @@ export const useStore = create<Store>()(
     {
       name: 'july-plan-store',
       storage: createJSONStorage(() => localStorage),
-      version: 4,
+      version: 5,
       // Backfill missing fields from defaults — important when migrating
-      // between V1 → V2 → V3 → V4 schemas.
+      // between V1 → V2 → V3 → V4 → V4.1 schemas.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppState>;
         const c = current as AppState;
@@ -728,7 +731,6 @@ export const useStore = create<Store>()(
           memories: p.memories ?? c.memories,
           conversationSummaries: p.conversationSummaries ?? c.conversationSummaries,
           aiNotifications: p.aiNotifications ?? c.aiNotifications,
-          // V4: deep-merge notification preferences + learning profile
           notificationPreferences: {
             ...c.notificationPreferences,
             ...(p.notificationPreferences ?? {}),
