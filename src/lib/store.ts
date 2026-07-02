@@ -1,11 +1,12 @@
 // July Plan — Zustand store with localStorage persistence (offline-first)
+// V2: extended with Journal, Knowledge Base, AI chat history, AI profile.
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { v4 as uuid } from 'uuid';
 import type {
   Task, Section, Habit, RoutineBlock, FinanceEntry, FinanceTarget,
   AppSettings, AppState, SubSection, ChecklistItem, Priority, TaskType,
-  RepeatRule,
+  RepeatRule, JournalEntry, KnowledgeNote, AIChatMessageStore,
 } from './types';
 import {
   DEFAULT_SECTIONS, DEFAULT_HABITS, DEFAULT_ROUTINE,
@@ -13,12 +14,20 @@ import {
 } from './seed';
 
 const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'system',
+  theme: 'dark',
   waterTarget: 3000,
   proteinTarget: 90,
   maxWastedDays: 2,
   soundEnabled: true,
   notificationsEnabled: true,
+  // AI profile — defaults to z-ai provider (built-in, no key needed)
+  aiProvider: 'zai',
+  aiModelChat: 'glm-4.6',
+  aiModelPlanning: 'glm-4.6',
+  aiModelReports: 'glm-4.6',
+  aiTemperature: 0.7,
+  aiMaxTokens: 1500,
+  aiEnabledModules: ['tasks', 'habits', 'health', 'finance', 'journal'],
 };
 
 interface StoreActions {
@@ -48,6 +57,17 @@ interface StoreActions {
   deleteFinanceEntry: (id: string) => void;
   addFinanceTarget: (title: string, amount: number, type: FinanceTarget['type']) => void;
   deleteFinanceTarget: (id: string) => void;
+  // journal (V2)
+  addJournalEntry: (input: Omit<JournalEntry, 'id' | 'created_at'>) => string;
+  updateJournalEntry: (id: string, patch: Partial<JournalEntry>) => void;
+  deleteJournalEntry: (id: string) => void;
+  // knowledge (V2)
+  addKnowledgeNote: (input: Omit<KnowledgeNote, 'id' | 'created_at' | 'updated_at'>) => string;
+  updateKnowledgeNote: (id: string, patch: Partial<KnowledgeNote>) => void;
+  deleteKnowledgeNote: (id: string) => void;
+  // ai chat (V2)
+  appendAIChat: (msg: Omit<AIChatMessageStore, 'id' | 'timestamp'>) => void;
+  clearAIChat: () => void;
   // settings
   updateSettings: (patch: Partial<AppSettings>) => void;
   // system
@@ -68,6 +88,9 @@ const initialAppState: AppState = {
   financeTargets: DEFAULT_FINANCE_TARGETS,
   weeklyThemes: DEFAULT_WEEKLY_THEMES,
   settings: DEFAULT_SETTINGS,
+  journal: [],
+  knowledgeNotes: [],
+  aiChatHistory: [],
   lastOpened: null,
   initialized: true,
 };
@@ -296,6 +319,66 @@ export const useStore = create<Store>()(
       deleteFinanceTarget: (id) =>
         set((s) => ({ financeTargets: s.financeTargets.filter((t) => t.id !== id) })),
 
+      // ---------- Journal (V2) ----------
+      addJournalEntry: (input) => {
+        const id = `j-${uuid().slice(0, 8)}`;
+        const entry: JournalEntry = {
+          id,
+          entry_date: input.entry_date,
+          title: input.title,
+          content: input.content,
+          mood_score: input.mood_score,
+          reflection_type: input.reflection_type ?? 'daily',
+          ai_summary: input.ai_summary,
+          created_at: new Date().toISOString(),
+        };
+        set((s) => ({ journal: [entry, ...s.journal] }));
+        return id;
+      },
+      updateJournalEntry: (id, patch) =>
+        set((s) => ({
+          journal: s.journal.map((j) => (j.id === id ? { ...j, ...patch } : j)),
+        })),
+      deleteJournalEntry: (id) =>
+        set((s) => ({ journal: s.journal.filter((j) => j.id !== id) })),
+
+      // ---------- Knowledge Notes (V2) ----------
+      addKnowledgeNote: (input) => {
+        const id = `k-${uuid().slice(0, 8)}`;
+        const now = new Date().toISOString();
+        const note: KnowledgeNote = {
+          id,
+          title: input.title,
+          content: input.content,
+          tags: input.tags ?? [],
+          source_type: input.source_type,
+          reference_url: input.reference_url,
+          ai_summary: input.ai_summary,
+          created_at: now,
+          updated_at: now,
+        };
+        set((s) => ({ knowledgeNotes: [note, ...s.knowledgeNotes] }));
+        return id;
+      },
+      updateKnowledgeNote: (id, patch) =>
+        set((s) => ({
+          knowledgeNotes: s.knowledgeNotes.map((n) =>
+            n.id === id ? { ...n, ...patch, updated_at: new Date().toISOString() } : n,
+          ),
+        })),
+      deleteKnowledgeNote: (id) =>
+        set((s) => ({ knowledgeNotes: s.knowledgeNotes.filter((n) => n.id !== id) })),
+
+      // ---------- AI Chat History (V2) ----------
+      appendAIChat: (msg) =>
+        set((s) => ({
+          aiChatHistory: [
+            ...s.aiChatHistory,
+            { id: `c-${uuid().slice(0, 8)}`, timestamp: new Date().toISOString(), ...msg },
+          ].slice(-100), // keep last 100 messages
+        })),
+      clearAIChat: () => set({ aiChatHistory: [] }),
+
       // ---------- Settings ----------
       updateSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
@@ -313,6 +396,9 @@ export const useStore = create<Store>()(
           finance: s.finance,
           financeTargets: s.financeTargets,
           weeklyThemes: s.weeklyThemes,
+          journal: s.journal,
+          knowledgeNotes: s.knowledgeNotes,
+          aiChatHistory: s.aiChatHistory,
           settings: s.settings,
         }, null, 2);
       },
@@ -328,6 +414,9 @@ export const useStore = create<Store>()(
             finance: data.finance ?? [],
             financeTargets: data.financeTargets ?? DEFAULT_FINANCE_TARGETS,
             weeklyThemes: data.weeklyThemes ?? DEFAULT_WEEKLY_THEMES,
+            journal: data.journal ?? [],
+            knowledgeNotes: data.knowledgeNotes ?? [],
+            aiChatHistory: data.aiChatHistory ?? [],
             settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
           });
           return true;

@@ -1,38 +1,61 @@
 'use client';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth/context';
 import { cn, todayISO } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
   LayoutDashboard, ListChecks, FolderTree, Sunrise, Repeat,
   Wallet, CalendarDays, BarChart3, Settings, Flame, X,
+  Brain, Sparkles, BookOpen, BookMarked, Cpu, FileText, LogOut,
 } from 'lucide-react';
 import { SectionIcon } from './icon';
 
 export type ViewKey =
   | 'dashboard' | 'today' | 'tasks' | 'sections'
   | 'routine' | 'habits' | 'finance' | 'monthly'
-  | 'reports' | 'settings';
+  | 'reports' | 'settings'
+  | 'ai-chat' | 'ai-planner' | 'ai-reports'
+  | 'journal' | 'knowledge' | 'dev';
 
 interface NavItem {
   key: ViewKey;
   label: string;
   icon: typeof LayoutDashboard;
   badge?: 'count' | 'wasted' | 'streak';
+  group: 'main' | 'life' | 'ai' | 'system';
+  offlineOnly?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { key: 'dashboard', label: 'Dashboard',  icon: LayoutDashboard },
-  { key: 'today',     label: 'Today Plan', icon: ListChecks, badge: 'count' },
-  { key: 'tasks',     label: 'Tasks',      icon: FolderTree },
-  { key: 'sections',  label: 'Sections',   icon: SectionIcon as unknown as typeof LayoutDashboard },
-  { key: 'routine',   label: 'Daily Routine', icon: Sunrise },
-  { key: 'habits',    label: 'Habits',     icon: Repeat, badge: 'streak' },
-  { key: 'finance',   label: 'Finance',    icon: Wallet },
-  { key: 'monthly',   label: 'July Plan',  icon: CalendarDays, badge: 'wasted' },
-  { key: 'reports',   label: 'Reports',    icon: BarChart3 },
-  { key: 'settings',  label: 'Settings',   icon: Settings },
+  // Main
+  { key: 'dashboard', label: 'Dashboard',  icon: LayoutDashboard, group: 'main' },
+  { key: 'today',     label: 'Today Plan', icon: ListChecks, badge: 'count', group: 'main' },
+  { key: 'tasks',     label: 'Tasks',      icon: FolderTree, group: 'main' },
+  { key: 'sections',  label: 'Sections',   icon: SectionIcon as unknown as typeof LayoutDashboard, group: 'main' },
+  // Life
+  { key: 'routine',   label: 'Daily Routine', icon: Sunrise, group: 'life' },
+  { key: 'habits',    label: 'Habits',     icon: Repeat, badge: 'streak', group: 'life' },
+  { key: 'finance',   label: 'Finance',    icon: Wallet, group: 'life' },
+  { key: 'monthly',   label: 'July Plan',  icon: CalendarDays, badge: 'wasted', group: 'life' },
+  { key: 'journal',   label: 'Journal',    icon: BookOpen, group: 'life' },
+  { key: 'knowledge', label: 'Knowledge',  icon: BookMarked, group: 'life' },
+  // AI
+  { key: 'ai-chat',    label: 'AI Assistant', icon: Brain, group: 'ai' },
+  { key: 'ai-planner', label: 'AI Planner',   icon: Sparkles, group: 'ai' },
+  { key: 'ai-reports', label: 'AI Reports',   icon: FileText, group: 'ai' },
+  // System
+  { key: 'reports',   label: 'Analytics',  icon: BarChart3, group: 'system' },
+  { key: 'dev',       label: 'AI Controls', icon: Cpu, group: 'system' },
+  { key: 'settings',  label: 'Settings',   icon: Settings, group: 'system' },
 ];
+
+const GROUP_LABELS: Record<NavItem['group'], string> = {
+  main: 'Main',
+  life: 'Life Modules',
+  ai: 'AI Brain',
+  system: 'System',
+};
 
 interface SidebarProps {
   current: ViewKey;
@@ -45,6 +68,7 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   const tasks = useStore((s) => s.tasks);
   const habits = useStore((s) => s.habits);
   const settings = useStore((s) => s.settings);
+  const { profile, isOffline, signOut } = useAuth();
   const today = todayISO();
 
   // Today's pending count
@@ -83,6 +107,9 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   }
   const wasted = getMonthWasted();
 
+  // Group nav items
+  const groups: NavItem['group'][] = ['main', 'life', 'ai', 'system'];
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -111,7 +138,7 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
             <div className="leading-tight">
               <div className="font-bold text-sm">July Plan</div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                Personal Execution OS
+                Personal AI OS · V2
               </div>
             </div>
           </div>
@@ -124,63 +151,87 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
           </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-4 space-y-1">
-          {NAV.map((item) => {
-            const Icon = item.icon;
-            const active = current === item.key;
-            let badge: React.ReactNode = null;
-            if (item.badge === 'count' && todayPending > 0) {
-              badge = (
-                <span className="ml-auto text-xs bg-primary/15 text-primary rounded-full px-2 py-0.5 font-medium">
-                  {todayPending}
-                </span>
-              );
-            }
-            if (item.badge === 'streak' && bestStreak > 0) {
-              badge = (
-                <span className="ml-auto text-xs flex items-center gap-1 text-orange-500 font-medium">
-                  <Flame className="h-3.5 w-3.5" />
-                  {bestStreak}
-                </span>
-              );
-            }
-            if (item.badge === 'wasted') {
-              const danger = wasted >= settings.maxWastedDays;
-              badge = (
-                <span className={cn(
-                  'ml-auto text-xs rounded-full px-2 py-0.5 font-medium',
-                  danger ? 'bg-red-500/20 text-red-500' : 'bg-muted text-muted-foreground',
-                )}>
-                  {wasted}/{settings.maxWastedDays}
-                </span>
-              );
-            }
+        {/* User badge (auth status) */}
+        {profile && (
+          <div className="px-4 py-2 border-b border-sidebar-border flex items-center gap-2">
+            <div className={cn(
+              'h-2 w-2 rounded-full',
+              isOffline ? 'bg-amber-500' : 'bg-emerald-500',
+            )} />
+            <span className="text-xs text-muted-foreground truncate">
+              {isOffline ? 'Offline mode' : profile.email}
+            </span>
+          </div>
+        )}
+
+        {/* Nav (grouped) */}
+        <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-4 space-y-4">
+          {groups.map((group) => {
+            const items = NAV.filter((n) => n.group === group);
+            if (items.length === 0) return null;
             return (
-              <button
-                key={item.key}
-                onClick={() => { onNavigate(item.key); onMobileClose(); }}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium',
-                  'transition-colors',
-                  active
-                    ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
-                    : 'hover:bg-sidebar-accent text-sidebar-foreground/80 hover:text-sidebar-foreground',
-                )}
-              >
-                {item.key === 'sections' ? (
-                  <SectionIcon name="FolderTree" className="h-4 w-4" />
-                ) : (
-                  <Icon className="h-4 w-4" />
-                )}
-                <span>{item.label}</span>
-                {badge}
-              </button>
+              <div key={group} className="space-y-1">
+                <div className="px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                  {GROUP_LABELS[group]}
+                </div>
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  const active = current === item.key;
+                  let badge: React.ReactNode = null;
+                  if (item.badge === 'count' && todayPending > 0) {
+                    badge = (
+                      <span className="ml-auto text-xs bg-primary/15 text-primary rounded-full px-2 py-0.5 font-medium">
+                        {todayPending}
+                      </span>
+                    );
+                  }
+                  if (item.badge === 'streak' && bestStreak > 0) {
+                    badge = (
+                      <span className="ml-auto text-xs flex items-center gap-1 text-orange-500 font-medium">
+                        <Flame className="h-3.5 w-3.5" />
+                        {bestStreak}
+                      </span>
+                    );
+                  }
+                  if (item.badge === 'wasted') {
+                    const danger = wasted >= settings.maxWastedDays;
+                    badge = (
+                      <span className={cn(
+                        'ml-auto text-xs rounded-full px-2 py-0.5 font-medium',
+                        danger ? 'bg-red-500/20 text-red-500' : 'bg-muted text-muted-foreground',
+                      )}>
+                        {wasted}/{settings.maxWastedDays}
+                      </span>
+                    );
+                  }
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => { onNavigate(item.key); onMobileClose(); }}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium',
+                        'transition-colors',
+                        active
+                          ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
+                          : 'hover:bg-sidebar-accent text-sidebar-foreground/80 hover:text-sidebar-foreground',
+                      )}
+                    >
+                      {item.key === 'sections' ? (
+                        <SectionIcon name="FolderTree" className="h-4 w-4" />
+                      ) : (
+                        <Icon className="h-4 w-4" />
+                      )}
+                      <span>{item.label}</span>
+                      {badge}
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
 
-        {/* Footer: monthly progress */}
+        {/* Footer: monthly progress + sign out */}
         <div className="border-t border-sidebar-border p-4 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">July Progress</span>
@@ -193,6 +244,15 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
             <Badge variant="destructive" className="w-full justify-center text-[10px]">
               Wasted-day limit reached — recover today
             </Badge>
+          )}
+          {profile && (
+            <button
+              onClick={() => signOut()}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign out {isOffline ? '(exit offline)' : ''}
+            </button>
           )}
         </div>
       </aside>

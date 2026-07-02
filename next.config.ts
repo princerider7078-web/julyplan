@@ -1,12 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // For APK / static export (Capacitor wraps the `out/` folder)
-  output: "export",
+  // Standalone build (with API routes for AI proxy)
+  output: "standalone",
   images: {
     unoptimized: true,
   },
-  // Keep dev server tolerant
   typescript: {
     ignoreBuildErrors: true,
   },

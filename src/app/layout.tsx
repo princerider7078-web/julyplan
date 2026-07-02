@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AuthProvider } from "@/lib/auth/context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "July Plan — Personal Execution OS",
-  description: "Offline-first personal task manager for the July execution plan. Track health, voice, study, routine, habits, and finance.",
-  keywords: ["July Plan", "task manager", "offline", "habits", "routine"],
+  title: "July Plan V2 — Personal AI Operating System",
+  description: "Cloud-powered personal AI OS. Tasks, habits, health, voice, mind, finance, journal — connected by a single AI brain.",
+  keywords: ["July Plan", "AI OS", "Supabase", "task manager", "habit tracker"],
   authors: [{ name: "July Plan" }],
 };
 
@@ -32,7 +33,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <ThemeProvider>
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </ThemeProvider>
         <Toaster />
       </body>

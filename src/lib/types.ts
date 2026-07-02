@@ -102,6 +102,36 @@ export interface WeeklyTheme {
   focus: string[];
 }
 
+export interface JournalEntry {
+  id: string;
+  entry_date: string;       // ISO date
+  title?: string;
+  content: string;
+  mood_score: number;       // 1-10
+  reflection_type?: 'daily' | 'weekly' | 'monthly' | 'free';
+  ai_summary?: string;
+  created_at: string;
+}
+
+export interface KnowledgeNote {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  source_type?: string;
+  reference_url?: string;
+  ai_summary?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIChatMessageStore {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   waterTarget: number;     // ml
@@ -109,6 +139,14 @@ export interface AppSettings {
   maxWastedDays: number;   // per month
   soundEnabled: boolean;
   notificationsEnabled: boolean;
+  // AI profile
+  aiProvider: 'zai' | 'openrouter' | 'gemini' | 'groq' | 'openai' | 'ollama';
+  aiModelChat: string;
+  aiModelPlanning: string;
+  aiModelReports: string;
+  aiTemperature: number;
+  aiMaxTokens: number;
+  aiEnabledModules: string[];
 }
 
 export interface AppState {
@@ -120,6 +158,9 @@ export interface AppState {
   financeTargets: FinanceTarget[];
   weeklyThemes: WeeklyTheme[];
   settings: AppSettings;
+  journal: JournalEntry[];
+  knowledgeNotes: KnowledgeNote[];
+  aiChatHistory: AIChatMessageStore[];
   lastOpened: string | null;
   initialized: boolean;
 }
