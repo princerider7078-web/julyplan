@@ -6,6 +6,9 @@ import {
   getNotificationAnalytics,
   clearNotificationLog,
   getPendingNotifications,
+  sendTestNotification,
+  requestNotificationPermission,
+  getPermissionStatus,
   type NotificationLogEntry,
   type ScheduledNotification,
 } from '@/lib/notifications/service';
@@ -18,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
   Bell, Trash2, RefreshCw, Clock, CheckCircle2, AlertTriangle,
-  BarChart3, History, Smartphone, Globe, Zap,
+  BarChart3, History, Smartphone, Globe, Zap, Send,
 } from 'lucide-react';
 import { formatDateLong, formatTime12, cn } from '@/lib/utils';
 import type { ViewKey } from '../sidebar';
@@ -40,25 +43,36 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export function NotificationLogView({ onNavigate }: Props) {
+  const tasks = useStore((s) => s.tasks);
   const [log, setLog] = useState<NotificationLogEntry[]>([]);
   const [pending, setPending] = useState<ScheduledNotification[]>([]);
   const [analytics, setAnalytics] = useState(getNotificationAnalytics());
   const [refreshing, setRefreshing] = useState(false);
-
-  const tasks = useStore((s) => s.tasks);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
+  const [permission, setPermission] = useState<'granted' | 'denied' | 'default' | 'unknown'>('unknown');
+  const [platform, setPlatform] = useState<'native' | 'web'>('web');
 
   async function refresh() {
     setRefreshing(true);
     setLog(getNotificationLog());
     setAnalytics(getNotificationAnalytics());
+    setPermission(getPermissionStatus());
+    setPlatform(isNative() ? 'native' : 'web');
     const pendingNotifs = await getPendingNotifications();
     setPending(pendingNotifs);
     setRefreshing(false);
   }
 
   useEffect(() => {
-    // Defer refresh to microtask to avoid setState-in-effect lint error
     queueMicrotask(() => { refresh(); });
+    // Refresh every 30s to pick up new notifications
+    const interval = setInterval(() => {
+      setLog(getNotificationLog());
+      setAnalytics(getNotificationAnalytics());
+      setPermission(getPermissionStatus());
+    }, 30_000);
+    return () => clearInterval(interval);
   }, []);
 
   async function handleRescheduleAll() {
@@ -67,14 +81,31 @@ export function NotificationLogView({ onNavigate }: Props) {
     await refresh();
   }
 
+  async function handleEnableNotifications() {
+    const result = await requestNotificationPermission();
+    setPermission(result ? 'granted' : 'denied');
+    if (result) {
+      setTestResult('✅ Permission granted! Now click "Send Test" to verify.');
+    } else {
+      setTestResult('❌ Permission denied. Check your browser settings to allow notifications for this site.');
+    }
+  }
+
+  async function handleSendTest() {
+    setTestBusy(true);
+    const result = await sendTestNotification();
+    setTestResult(result.message);
+    setTestBusy(false);
+    // Refresh log after a moment to show the test entry
+    setTimeout(() => refresh(), 500);
+  }
+
   function handleClearLog() {
     if (confirm('Clear notification history? This cannot be undone.')) {
       clearNotificationLog();
       refresh();
     }
   }
-
-  const platform = isNative() ? 'native' : 'web';
 
   return (
     <div className="space-y-6">
@@ -91,9 +122,29 @@ export function NotificationLogView({ onNavigate }: Props) {
             ) : (
               <><Globe className="h-3.5 w-3.5 text-amber-500" /> Web mode · browser notifications (limited)</>
             )}
+            <span className="ml-2">
+              Permission:
+              <Badge variant="outline" className={cn(
+                'ml-1 text-[10px]',
+                permission === 'granted' && 'text-emerald-500 border-emerald-500/40',
+                permission === 'denied' && 'text-red-500 border-red-500/40',
+                permission === 'default' && 'text-amber-500 border-amber-500/40',
+              )}>
+                {permission === 'granted' ? '✅ Granted' : permission === 'denied' ? '❌ Denied' : permission === 'default' ? '⚠ Not asked' : '? Unknown'}
+              </Badge>
+            </span>
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {permission !== 'granted' && (
+            <Button size="sm" onClick={handleEnableNotifications}>
+              <Bell className="h-3.5 w-3.5 mr-1" /> Enable Notifications
+            </Button>
+          )}
+          <Button size="sm" onClick={handleSendTest} disabled={testBusy}>
+            <Send className="h-3.5 w-3.5 mr-1" />
+            {testBusy ? 'Sending...' : 'Send Test'}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleRescheduleAll} disabled={refreshing}>
             <RefreshCw className={cn('h-3.5 w-3.5 mr-1', refreshing && 'animate-spin')} />
             Reschedule All
@@ -103,6 +154,37 @@ export function NotificationLogView({ onNavigate }: Props) {
           </Button>
         </div>
       </div>
+
+      {/* Test result banner */}
+      {testResult && (
+        <div className={cn(
+          'p-3 rounded-md border text-sm',
+          testResult.startsWith('✅') && 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300',
+          testResult.startsWith('❌') && 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-300',
+          !testResult.startsWith('✅') && !testResult.startsWith('❌') && 'bg-primary/5 border-primary/20',
+        )}>
+          {testResult}
+        </div>
+      )}
+
+      {/* Web mode warning + enable button */}
+      {platform === 'web' && permission !== 'granted' && (
+        <Card className="border-l-4 border-l-amber-500 bg-amber-500/5">
+          <CardContent className="p-3 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <div className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                  Browser notifications need permission
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Click "Enable Notifications" above. Then "Send Test" to verify. Notifications fire only when this tab is open — install the APK for full background notifications.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Analytics Dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

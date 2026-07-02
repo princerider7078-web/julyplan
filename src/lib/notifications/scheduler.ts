@@ -15,7 +15,7 @@
 // - Batch notifications (group multiple upcoming into one)
 // - Smart snooze (AI-learned default snooze duration)
 
-import { scheduleNotification, cancelTaskNotifications, logNotificationFired } from './service';
+import { scheduleNotification, cancelTaskNotifications } from './service';
 import { getChannelForCategory } from './channels';
 import { useStore } from '../store';
 import type { Task, Habit } from '../types';
@@ -43,14 +43,27 @@ export async function scheduleTaskReminders(task: Task): Promise<void> {
   const today = todayISO();
   const taskDate = task.startDate ?? today;
   const taskDateTime = combineDateTime(taskDate, task.time);
+  const now = Date.now();
 
-  // Don't schedule past notifications
-  if (taskDateTime.getTime() < Date.now()) return;
+  // If task time is more than 5 minutes in the past, skip (too late to remind)
+  // If within last 5 min, still fire (catch-up for when tab was closed)
+  if (taskDateTime.getTime() < now - 5 * 60000) return;
 
   // Check if task category is enabled
+  // Map section to category name (not channel ID) — prefs.categories uses category names
   const section = store.sections.find((s) => s.id === task.sectionId);
-  const categoryKey = section ? getChannelForCategory(section.id) : 'tasks';
-  if (!prefs.categories[categoryKey as keyof typeof prefs.categories]) return;
+  const sectionName = section?.name?.toLowerCase() ?? '';
+  let categoryName: 'task' | 'habit' | 'health' | 'study' | 'work' | 'goal_progress' | 'ai_insights' | 'deadlines' | 'personal' | 'achievements' | 'weekly_reports' | 'finance';
+  if (sectionName.includes('health')) categoryName = 'health';
+  else if (sectionName.includes('voice')) categoryName = 'health';
+  else if (sectionName.includes('study') || sectionName.includes('work')) categoryName = 'study';
+  else if (sectionName.includes('routine')) categoryName = 'personal';
+  else if (sectionName.includes('finance')) categoryName = 'finance';
+  else if (sectionName.includes('weekly') || sectionName.includes('monthly')) categoryName = 'task';
+  else if (sectionName.includes('growth')) categoryName = 'goal_progress';
+  else categoryName = 'task';
+
+  if (!prefs.categories[categoryName]) return;
 
   const channelId = getChannelForCategory('task');
   const priorityLabel = task.priority === 'critical' ? '🔴 Critical'
@@ -192,6 +205,8 @@ async function scheduleSingleReminder(input: {
     }
   }
 
+  // scheduleNotification handles the actual firing + logging.
+  // (On web: logs when actually fired. On native: logs on received callback.)
   await scheduleNotification({
     title: input.title,
     body: input.body,
@@ -202,14 +217,6 @@ async function scheduleSingleReminder(input: {
       type: input.type,
       priority: input.priority,
     },
-  });
-
-  // Log it
-  logNotificationFired({
-    title: input.title,
-    body: input.body,
-    channelId: input.channelId,
-    taskId: input.taskId,
   });
 }
 

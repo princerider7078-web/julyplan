@@ -1,16 +1,16 @@
 // Unified Notification Service.
 // Uses Capacitor LocalNotifications on native (Android/iOS) for real system
 // notifications with channels, action buttons, and background scheduling.
-// Falls back to browser Notification API on web.
+// Falls back to browser Notification API on web with 30s polling (more reliable
+// than setTimeout — survives page reloads and catches up missed notifications).
 //
 // Key features:
-// - Schedule notifications at exact times (works in background on Android)
+// - Schedule notifications at exact times
+// - 30s web polling (fires reliably while tab is open, catches up missed ones)
 // - Notification channels (Android): Tasks, Habits, Health, etc.
 // - Interactive action buttons: Mark Done, Snooze, Reschedule, Ask AI
-// - Multiple reminders per task (1 day before, 1 hour before, 10 min before)
-// - Quiet hours support
-// - Sound + vibration
-// - Notification log (history of all fired notifications)
+// - Notification log (history of all FIRED notifications — not scheduled ones)
+// - Test notification button for immediate verification
 
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { isNative, isWeb } from './platform';
@@ -23,7 +23,6 @@ export interface ScheduledNotification {
   body: string;
   scheduledAt: Date;
   channelId: string;
-  // Extra data passed to the action handler
   extra?: {
     taskId?: string;
     habitId?: string;
@@ -35,6 +34,117 @@ export interface ScheduledNotification {
 
 let isInitialized = false;
 
+// ─── Web polling state (survives reloads via localStorage) ───
+const WEB_SCHEDULED_KEY = 'july-plan-web-scheduled';
+let webPollInterval: ReturnType<typeof setInterval> | null = null;
+
+interface WebScheduledEntry {
+  id: number;
+  title: string;
+  body: string;
+  scheduledAt: string;  // ISO
+  channelId: string;
+  extra?: ScheduledNotification['extra'];
+}
+
+function loadWebScheduled(): WebScheduledEntry[] {
+  try {
+    const stored = localStorage.getItem(WEB_SCHEDULED_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
+}
+
+function saveWebScheduled(list: WebScheduledEntry[]): void {
+  try {
+    localStorage.setItem(WEB_SCHEDULED_KEY, JSON.stringify(list.slice(0, 100)));
+  } catch { /* ignore */ }
+}
+
+function addWebScheduled(entry: WebScheduledEntry): void {
+  const list = loadWebScheduled();
+  // Don't add duplicates
+  if (list.some((e) => e.id === entry.id)) return;
+  list.push(entry);
+  saveWebScheduled(list);
+}
+
+function removeWebScheduled(id: number): void {
+  const list = loadWebScheduled().filter((e) => e.id !== id);
+  saveWebScheduled(list);
+}
+
+// ─── Web polling: check every 30s for due notifications ───
+function startWebPolling(): void {
+  if (webPollInterval) return;
+  if (typeof window === 'undefined') return;
+
+  // Run immediately + every 30s
+  pollWebNotifications();
+  webPollInterval = setInterval(pollWebNotifications, 30_000);
+
+  // Also poll when tab becomes visible (catch up missed notifications)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      pollWebNotifications();
+    }
+  });
+
+  console.log('[Notif] Web polling started (30s interval + visibility change)');
+}
+
+function pollWebNotifications(): void {
+  const list = loadWebScheduled();
+  if (list.length === 0) return;
+
+  const now = Date.now();
+  const due = list.filter((e) => new Date(e.scheduledAt).getTime() <= now);
+  const remaining = list.filter((e) => new Date(e.scheduledAt).getTime() > now);
+
+  if (due.length > 0) {
+    console.log(`[Notif] Firing ${due.length} due notification(s)`);
+    due.forEach((entry) => {
+      fireWebNotification(entry.title, entry.body, entry.channelId, entry.extra);
+    });
+    saveWebScheduled(remaining);
+  }
+}
+
+// ─── Actually fire a browser notification + log it ───
+function fireWebNotification(
+  title: string,
+  body: string,
+  channelId: string,
+  extra?: ScheduledNotification['extra'],
+): void {
+  // Log it as fired (regardless of permission — user can see in log)
+  logNotificationFired({
+    title,
+    body,
+    channelId,
+    taskId: extra?.taskId,
+    habitId: extra?.habitId,
+  });
+
+  // Try to show browser notification
+  try {
+    if (typeof Notification === 'undefined') {
+      console.warn('[Notif] Notification API not available');
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      console.warn('[Notif] Permission not granted — logged but not shown. Click "Enable Notifications" in Preferences.');
+      return;
+    }
+    new Notification(title, {
+      body,
+      tag: extra?.taskId ?? `july-plan-${Date.now()}`,
+      // icon could be added
+    });
+  } catch (e) {
+    console.warn('[Notif] Failed to show notification:', e);
+  }
+}
+
 // ─── Initialization ───
 
 export async function initNotifications(): Promise<void> {
@@ -43,16 +153,13 @@ export async function initNotifications(): Promise<void> {
 
   if (isNative()) {
     try {
-      // Request permission
       const permStatus = await LocalNotifications.requestPermissions();
       if (permStatus.display !== 'granted') {
-        console.warn('[Notif] Notification permission not granted');
+        console.warn('[Notif] Native notification permission not granted');
         return;
       }
 
       // Create notification channels (Android)
-      await LocalNotifications.createChannel(CHANNELS[0] as any).catch(() => {});
-      // Create channels one by one (createChannel takes a single channel)
       for (const ch of CHANNELS) {
         try {
           await LocalNotifications.createChannel({
@@ -60,10 +167,9 @@ export async function initNotifications(): Promise<void> {
             name: ch.name,
             description: ch.description,
             importance: ch.importance === 'high' ? 4 : ch.importance === 'default' ? 3 : 2,
-            visibility: 1, // public
+            visibility: 1,
             sound: ch.sound,
             vibration: ch.vibration,
-            // ledColor not supported in all versions
           });
         } catch { /* channel may already exist */ }
       }
@@ -71,17 +177,11 @@ export async function initNotifications(): Promise<void> {
       // Listen for action button taps
       LocalNotifications.addListener(
         'localNotificationActionPerformed',
-        (event) => {
-          handleActionPerformed(event);
-        },
+        (event) => handleActionPerformed(event),
       );
-
-      // Listen for notification received (while app is open)
       LocalNotifications.addListener(
         'localNotificationReceived',
-        (event) => {
-          handleReceived(event);
-        },
+        (event) => handleReceived(event),
       );
 
       console.log('[Notif] Native notifications initialized with', CHANNELS.length, 'channels');
@@ -89,14 +189,44 @@ export async function initNotifications(): Promise<void> {
       console.warn('[Notif] Native init failed:', e);
     }
   } else if (isWeb()) {
-    // Web: request browser notification permission
+    // Web: request permission if not asked yet
     if ('Notification' in window && Notification.permission === 'default') {
-      try {
-        await Notification.requestPermission();
-      } catch { /* ignore */ }
+      // Don't auto-request — let user click the button. Auto-request is annoying.
+      console.log('[Notif] Web — permission not yet requested. User can enable in Preferences.');
     }
+    // Start polling for due notifications
+    startWebPolling();
     console.log('[Notif] Web notification service initialized');
   }
+}
+
+// ─── Request permission (user-triggered) ───
+
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (isNative()) {
+    try {
+      const result = await LocalNotifications.requestPermissions();
+      return result.display === 'granted';
+    } catch { return false; }
+  }
+  if (isWeb() && 'Notification' in window) {
+    try {
+      const result = await Notification.requestPermission();
+      return result === 'granted';
+    } catch { return false; }
+  }
+  return false;
+}
+
+export function getPermissionStatus(): 'granted' | 'denied' | 'default' | 'unknown' {
+  if (isNative()) {
+    // Can't check synchronously — return 'unknown' for now
+    return 'unknown';
+  }
+  if (isWeb() && 'Notification' in window) {
+    return Notification.permission;
+  }
+  return 'unknown';
 }
 
 // ─── Schedule a notification ───
@@ -105,10 +235,11 @@ export async function scheduleNotification(
   notif: Omit<ScheduledNotification, 'id'>,
 ): Promise<number | null> {
   const id = Math.floor(Math.random() * 1000000) + 1;
+  const fireTime = notif.scheduledAt.getTime();
+  const now = Date.now();
 
   if (isNative()) {
     try {
-      const actions = getActionsForType(notif.extra?.type ?? 'default');
       await LocalNotifications.schedule({
         notifications: [
           {
@@ -120,9 +251,7 @@ export async function scheduleNotification(
               allowWhileIdle: true,
             },
             channelId: notif.channelId,
-            // Action buttons (Capacitor 8+ supports this on Android)
             actionSetId: notif.extra?.type ?? 'default',
-            // Extra data accessible when action is tapped
             extra: {
               taskId: notif.extra?.taskId,
               habitId: notif.extra?.habitId,
@@ -134,29 +263,77 @@ export async function scheduleNotification(
       });
       return id;
     } catch (e) {
-      console.warn('[Notif] Schedule failed:', e);
+      console.warn('[Notif] Native schedule failed:', e);
       return null;
     }
-  } else if (isWeb()) {
-    // Web: schedule via setTimeout (only works while tab is open)
-    const delay = notif.scheduledAt.getTime() - Date.now();
-    if (delay <= 0) {
-      fireWebNotification(notif.title, notif.body);
-    } else if (delay < 24 * 60 * 60 * 1000) {
-      // Only schedule if within 24h (don't set huge timeouts)
-      setTimeout(() => fireWebNotification(notif.title, notif.body), delay);
+  }
+
+  // Web: add to polling list
+  if (isWeb()) {
+    // If already past, fire immediately
+    if (fireTime <= now) {
+      console.log('[Notif] Web — firing immediately (past time):', notif.title);
+      fireWebNotification(notif.title, notif.body, notif.channelId, notif.extra);
+      return id;
     }
+
+    // Otherwise, add to scheduled list (polled every 30s)
+    addWebScheduled({
+      id,
+      title: notif.title,
+      body: notif.body,
+      scheduledAt: notif.scheduledAt.toISOString(),
+      channelId: notif.channelId,
+      extra: notif.extra,
+    });
+    console.log('[Notif] Web — scheduled:', notif.title, 'at', notif.scheduledAt.toLocaleTimeString());
     return id;
   }
+
   return null;
 }
 
-function fireWebNotification(title: string, body: string): void {
-  try {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, { body });
+// ─── Send a test notification immediately ───
+
+export async function sendTestNotification(): Promise<{ success: boolean; message: string }> {
+  const permStatus = getPermissionStatus();
+
+  if (isNative()) {
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: Math.floor(Math.random() * 1000000) + 1,
+            title: '🧪 Test Notification',
+            body: 'If you see this, native notifications are working!',
+            schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
+            channelId: 'tasks',
+          },
+        ],
+      });
+      return { success: true, message: 'Test notification sent (native).' };
+    } catch (e) {
+      return { success: false, message: `Failed: ${e instanceof Error ? e.message : 'unknown'}` };
     }
-  } catch { /* ignore */ }
+  }
+
+  if (isWeb()) {
+    if (permStatus !== 'granted') {
+      return {
+        success: false,
+        message: 'Permission not granted. Click "Enable Notifications" first, then try again.',
+      };
+    }
+    fireWebNotification(
+      '🧪 Test Notification',
+      'If you see this, browser notifications are working! ' + new Date().toLocaleTimeString(),
+      'tasks',
+      { type: 'test' },
+    );
+    return { success: true, message: 'Test notification sent. Check your screen + Notification History.' };
+  }
+
+  return { success: false, message: 'Unknown platform.' };
 }
 
 // ─── Cancel a scheduled notification ───
@@ -167,7 +344,9 @@ export async function cancelNotification(id: number): Promise<void> {
       await LocalNotifications.cancel({ notifications: [{ id }] });
     } catch { /* ignore */ }
   }
-  // Web: setTimeout can't be cancelled without tracking IDs — skipped for simplicity
+  if (isWeb()) {
+    removeWebScheduled(id);
+  }
 }
 
 // ─── Cancel all pending notifications for a task ───
@@ -177,12 +356,17 @@ export async function cancelTaskNotifications(taskId: string): Promise<void> {
     try {
       const pending = await LocalNotifications.getPending();
       const toCancel = pending.notifications.filter(
-        (n) => (n.extra as any)?.taskId === taskId,
+        (n) => (n.extra as Record<string, unknown>)?.taskId === taskId,
       ).map((n) => ({ id: n.id }));
       if (toCancel.length > 0) {
         await LocalNotifications.cancel({ notifications: toCancel });
       }
     } catch { /* ignore */ }
+  }
+  if (isWeb()) {
+    const list = loadWebScheduled();
+    const remaining = list.filter((e) => e.extra?.taskId !== taskId);
+    saveWebScheduled(remaining);
   }
 }
 
@@ -196,29 +380,34 @@ export async function getPendingNotifications(): Promise<ScheduledNotification[]
         id: n.id,
         title: n.title,
         body: n.body,
-        scheduledAt: new Date((n.schedule as any)?.at ?? Date.now()),
-        channelId: (n as any).channelId ?? 'tasks',
-        extra: (n.extra as any) ?? {},
+        scheduledAt: new Date((n.schedule as { at?: Date })?.at ?? Date.now()),
+        channelId: (n as { channelId?: string }).channelId ?? 'tasks',
+        extra: (n.extra as ScheduledNotification['extra']) ?? {},
       }));
     } catch { /* ignore */ }
+  }
+  if (isWeb()) {
+    return loadWebScheduled().map((e) => ({
+      id: e.id,
+      title: e.title,
+      body: e.body,
+      scheduledAt: new Date(e.scheduledAt),
+      channelId: e.channelId,
+      extra: e.extra,
+    }));
   }
   return [];
 }
 
-// ─── Action handler ───
+// ─── Action handler (native only — web has no action buttons) ───
 
-async function handleActionPerformed(event: any): Promise<void> {
-  const actionId = event.actionId as string;
-  const notificationId = event.notification.id as number;
-  const extra = (event.notification.extra ?? {}) as {
-    taskId?: string;
-    habitId?: string;
-    type?: string;
-  };
+async function handleActionPerformed(event: { actionId?: string; notification?: { id?: number; title?: string; body?: string; extra?: Record<string, unknown>; channelId?: string } }): Promise<void> {
+  const actionId = event.actionId ?? '';
+  const notificationId = event.notification?.id ?? 0;
+  const extra = (event.notification?.extra ?? {}) as { taskId?: string; habitId?: string; type?: string };
 
-  console.log('[Notif] Action performed:', actionId, 'for notification', notificationId, 'extra:', extra);
+  console.log('[Notif] Action performed:', actionId, 'for notification', notificationId);
 
-  // Dynamically import store to avoid circular dependencies
   const { useStore } = await import('../store');
 
   switch (actionId) {
@@ -240,35 +429,34 @@ async function handleActionPerformed(event: any): Promise<void> {
       const minutes = actionId === 'snooze_15' ? 15 : actionId === 'snooze_30' ? 30 : 60;
       const snoozeAt = new Date(Date.now() + minutes * 60000);
       await scheduleNotification({
-        title: event.notification.title,
-        body: event.notification.body,
+        title: event.notification?.title ?? 'Reminder',
+        body: event.notification?.body ?? '',
         scheduledAt: snoozeAt,
-        channelId: (event.notification as any).channelId ?? 'tasks',
-        extra: extra as any,
+        channelId: event.notification?.channelId ?? 'tasks',
+        extra: extra as ScheduledNotification['extra'],
       });
       break;
     }
-    case 'skip': {
-      // Just dismiss — do nothing
+    case 'skip':
       break;
-    }
     case 'start_now':
     case 'reschedule':
     case 'ask_ai':
-    case 'view_tasks': {
-      // These require opening the app — Capacitor handles foreground automatically
+    case 'view_tasks':
       break;
-    }
   }
 
-  // Log the action for analytics
   logNotificationAction(notificationId, actionId, extra);
 }
 
-function handleReceived(event: any): void {
-  // Notification was received while app was open
-  console.log('[Notif] Received:', event.notificationId);
-  // Could show an in-app banner here
+function handleReceived(event: { notificationId?: number; title?: string; body?: string }): void {
+  // Native notification was shown — log it
+  console.log('[Notif] Native notification received:', event.notificationId);
+  logNotificationFired({
+    title: event.title ?? 'Notification',
+    body: event.body ?? '',
+    channelId: 'tasks',
+  });
 }
 
 // ─── Notification log (analytics) ───
@@ -299,7 +487,6 @@ export function logNotificationFired(notif: { title: string; body: string; chann
     };
     const log = getNotificationLog();
     log.unshift(entry);
-    // Keep last 200 entries
     localStorage.setItem(LOG_KEY, JSON.stringify(log.slice(0, 200)));
   } catch { /* ignore */ }
 }
@@ -307,7 +494,6 @@ export function logNotificationFired(notif: { title: string; body: string; chann
 export function logNotificationAction(notificationId: number, action: string, extra: { taskId?: string; habitId?: string }): void {
   try {
     const log = getNotificationLog();
-    // Find the most recent entry for this task/habit and mark the action
     const entry = log.find((e) => e.taskId === extra.taskId || e.habitId === extra.habitId);
     if (entry) {
       entry.action = action;
