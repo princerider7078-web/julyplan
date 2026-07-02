@@ -7,10 +7,42 @@
 //   - ZAI_API_KEY + ZAI_BASE_URL  (Z.ai public API, if you have one)
 //
 // Falls back to z-ai-web-dev-sdk + .z-ai-config (sandbox mode) if no env vars set.
+//
+// CORS enabled for Capacitor APK (origin https://localhost) + web origins.
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// ---------- CORS helpers ----------
+// Capacitor APK runs the WebView at https://localhost (or capacitor://localhost).
+// Vercel must return Access-Control-Allow-Origin for those or fetch() fails
+// in the APK with "Failed to fetch".
+
+const ALLOWED_ORIGINS = [
+  'https://localhost',
+  'capacitor://localhost',
+  'http://localhost',
+  'http://localhost:3000',
+  'https://localhost:3000',
+];
+
+function getCorsHeaders(req: NextRequest): Record<string, string> {
+  const origin = req.headers.get('origin') ?? '';
+  // Allow any Vercel preview/production URL + Capacitor origins + localhost
+  const isAllowed =
+    ALLOWED_ORIGINS.includes(origin) ||
+    /\.vercel\.app$/.test(origin) ||
+    origin === ''; // same-origin requests (no Origin header)
+
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? (origin || '*') : 'null',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  };
+}
 
 interface RequestBody {
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
@@ -182,11 +214,22 @@ async function callZaiSdk(body: RequestBody): Promise<{ text: string; tokensUsed
 
 // ---------- Main route handler ----------
 
+// Handle CORS preflight (browsers send OPTIONS before POST when cross-origin)
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: getCorsHeaders(req),
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body: RequestBody = await req.json();
     if (!body.messages || !Array.isArray(body.messages)) {
-      return NextResponse.json({ error: 'messages array required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'messages array required' },
+        { status: 400, headers: getCorsHeaders(req) },
+      );
     }
 
     // Detect which provider to use based on available env vars.
@@ -216,7 +259,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           error: 'No AI provider configured. Set one of these env vars on Vercel: OPENROUTER_API_KEY (recommended, free), GROQ_API_KEY (free), OPENAI_API_KEY, GEMINI_API_KEY, or ZAI_API_KEY + ZAI_BASE_URL. ' +
                  `(${sdkErr instanceof Error ? sdkErr.message : 'SDK error'})`,
-        }, { status: 500 });
+        }, { status: 500, headers: getCorsHeaders(req) });
       }
     }
 
@@ -231,16 +274,16 @@ export async function POST(req: NextRequest) {
       provider: result.provider,
       model: result.model,
       tokensUsed: result.tokensUsed,
-    });
+    }, { headers: getCorsHeaders(req) });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'AI request failed' },
-      { status: 500 },
+      { status: 500, headers: getCorsHeaders(req) },
     );
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   // Health check — shows which provider is configured
   const providers = [];
   if (process.env.OPENROUTER_API_KEY) providers.push('openrouter');
@@ -257,5 +300,5 @@ export async function GET() {
     hint: providers[0] === 'zai-sdk (sandbox fallback)'
       ? 'No API keys set. On Vercel, set OPENROUTER_API_KEY (free) or GROQ_API_KEY (free) in Project Settings → Environment Variables.'
       : `Using ${providers[0]}`,
-  });
+  }, { headers: getCorsHeaders(req) });
 }

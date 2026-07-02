@@ -6,10 +6,14 @@ const config: CapacitorConfig = {
   webDir: 'out',
   server: {
     androidScheme: 'https',
+    // Allow the WebView to make cross-origin requests to Vercel backend
+    cleartext: true,
   },
   android: {
     allowMixedContent: true,
     backgroundColor: '#1a1410',
+    // Required for fetch() to external domains (Vercel) from WebView
+    webContentsDebuggingEnabled: true,
   },
   plugins: {
     SplashScreen: {
