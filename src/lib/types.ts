@@ -194,6 +194,8 @@ export interface AppSettings {
   aiTemperature: number;
   aiMaxTokens: number;
   aiEnabledModules: string[];
+  // V3.1: AI backend URL for APK mode (empty = use relative /api/ai for web)
+  aiBackendUrl: string;
 }
 
 export interface AppState {

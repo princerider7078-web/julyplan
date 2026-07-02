@@ -144,11 +144,32 @@ export function DevControlsView() {
               <div className="grid gap-2">
                 <Label>Reports model</Label>
                 <Input
-                  value={settings.aiModelReports}
+                  value={settings.aiModelReports ?? ''}
                   onChange={(e) => updateSettings({ aiModelReports: e.target.value })}
                   placeholder="e.g. glm-4.6"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">AI Backend URL (APK mode)</CardTitle>
+              <CardDescription>
+                Web mode uses relative /api/ai automatically. For the APK, set this to your deployed July Plan URL.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2">
+              <Input
+                value={settings.aiBackendUrl ?? ''}
+                onChange={(e) => updateSettings({ aiBackendUrl: e.target.value.trim() })}
+                placeholder="https://your-deploy.example.com (leave empty for web mode)"
+              />
+              <p className="text-xs text-muted-foreground">
+                {settings.aiBackendUrl
+                  ? `→ Will call: ${settings.aiBackendUrl.replace(/\/$/, '')}/api/ai`
+                  : '→ Using relative /api/ai (web mode)'}
+              </p>
             </CardContent>
           </Card>
 

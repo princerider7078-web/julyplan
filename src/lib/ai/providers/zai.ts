@@ -1,8 +1,25 @@
 // Default AI provider: calls the /api/ai server route (which uses z-ai-web-dev-sdk).
 // This keeps the SDK server-side only — the browser never imports it.
-// In the APK build (static export, no API routes), fetch will fail and the
-// error is caught upstream — AI features show a friendly error there.
+//
+// URL resolution:
+// - Web mode (default): calls relative "/api/ai" — works because Next.js
+//   API route is deployed alongside the frontend.
+// - APK mode: the user sets `aiBackendUrl` in Dev Controls (e.g.
+//   "https://your-deploy.example.com") and this provider calls
+//   `${aiBackendUrl}/api/ai` so the APK reaches the cloud AI backend.
 import type { AIProviderAdapter, AIRequest, AIResponse } from '../types';
+import { useStore } from '../../store';
+
+function getAiUrl(): string {
+  // Read from store (browser-safe; returns '' in SSR)
+  try {
+    const backend = useStore.getState()?.settings?.aiBackendUrl;
+    if (backend && typeof window !== 'undefined') {
+      return `${backend.replace(/\/$/, '')}/api/ai`;
+    }
+  } catch { /* store not ready */ }
+  return '/api/ai';
+}
 
 export const zaiProvider: AIProviderAdapter = {
   name: 'zai',
@@ -13,9 +30,10 @@ export const zaiProvider: AIProviderAdapter = {
   ],
   async complete(req: AIRequest, model: string): Promise<AIResponse> {
     const start = Date.now();
+    const url = getAiUrl();
     let res: Response;
     try {
-      res = await fetch('/api/ai', {
+      res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -28,8 +46,8 @@ export const zaiProvider: AIProviderAdapter = {
       });
     } catch (networkErr) {
       throw new Error(
-        'AI features require an internet connection and the cloud version of July Plan. ' +
-        'In the offline APK build, all task/habit/finance/memory features work, but AI chat/planner/reports are disabled. ' +
+        'AI features require a connection to the July Plan backend. ' +
+        'If using the APK, open AI Controls → set AI Backend URL to your deployed July Plan URL. ' +
         `(${networkErr instanceof Error ? networkErr.message : 'network error'})`,
       );
     }

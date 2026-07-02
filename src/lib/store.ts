@@ -30,6 +30,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiTemperature: 0.7,
   aiMaxTokens: 1500,
   aiEnabledModules: ['tasks', 'habits', 'health', 'finance', 'journal'],
+  // AI backend URL — empty means use relative /api/ai (web mode).
+  // For APK, set to absolute URL like "https://your-deploy.example.com"
+  aiBackendUrl: '',
 };
 
 interface StoreActions {
