@@ -214,6 +214,10 @@ export interface AppState {
   memories: AIMemoryItem[];
   conversationSummaries: ConversationSummary[];
   aiNotifications: AINotification[];
+  // V4: smart notification system
+  notificationPreferences: NotificationPreferences;
+  learningProfile: LearningProfile;
+  recoveryQueue: RecoveryItem[];
   lastOpened: string | null;
   initialized: boolean;
 }
@@ -230,12 +234,95 @@ export interface AINotification {
   id: string;
   title: string;
   message: string;
-  type: 'task' | 'habit' | 'briefing' | 'review' | 'goal' | 'motivation' | 'health' | 'hydration' | 'workout' | 'sleep' | 'study';
+  type: 'task' | 'habit' | 'briefing' | 'review' | 'goal' | 'motivation' | 'health' | 'hydration' | 'workout' | 'sleep' | 'study' | 'priority' | 'focus' | 'procrastination' | 'deadline' | 'suggestion' | 'reschedule' | 'achievement';
   priority: 'low' | 'medium' | 'high' | 'critical';
   scheduled_at: string;       // ISO datetime
-  status: 'pending' | 'shown' | 'dismissed' | 'snoozed' | 'completed';
+  status: 'pending' | 'shown' | 'dismissed' | 'snoozed' | 'completed' | 'recovery';
   ai_generated: boolean;
   linked_entity_type?: 'task' | 'habit' | 'memory';
   linked_entity_id?: string;
+  created_at: string;
+
+  // ── V4: AI Reasoning + Escalation + Personalization ──
+  reasoning?: string;         // "Why now" — concise AI explanation
+  category?: NotificationCategory;
+  escalation_level?: 0 | 1 | 2 | 3 | 4;  // 0=normal, 4=recovery queue
+  snooze_count?: number;      // how many times user snoozed this
+  postpone_count?: number;    // how many times task was postponed (for procrastination alert)
+  batch_id?: string;          // group multiple notifications into one batch
+  tone?: NotificationTone;    // personalized tone used
+  estimated_minutes?: number; // estimated work remaining
+  actions?: NotificationAction[];  // interactive actions
+}
+
+export type NotificationCategory =
+  | 'task' | 'habit' | 'health' | 'work' | 'study'
+  | 'finance' | 'goal_progress' | 'ai_insights' | 'deadlines'
+  | 'personal' | 'achievements' | 'weekly_reports';
+
+export type NotificationTone = 'professional' | 'friendly' | 'motivational' | 'minimal' | 'strict';
+
+export type NotificationAction =
+  | 'complete' | 'snooze' | 'reschedule' | 'ask_ai' | 'skip'
+  | 'start' | 'split' | 'delay' | 'break_subtasks' | 'convert_habit';
+
+// ── V4: Notification Preferences ──
+export interface NotificationPreferences {
+  // Tone
+  tone: NotificationTone;
+  // Quiet hours (24h format)
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;   // "22:00"
+  quiet_hours_end: string;     // "07:00"
+  critical_bypass_quiet: boolean;
+  // Categories enabled
+  categories: Record<NotificationCategory, boolean>;
+  // Smart batching
+  batching_enabled: boolean;
+  batching_window_minutes: number;  // batch notifications within this window
+  // Escalation
+  escalation_enabled: boolean;
+  escalation_delay_minutes: number; // minutes between escalation levels
+  // Learning
+  learning_enabled: boolean;
+  // Default snooze duration (learned over time)
+  default_snooze_minutes: number;
+}
+
+// ── V4: AI Learning Profile ──
+export interface LearningProfile {
+  // Snooze patterns
+  avg_snooze_minutes: number;
+  snooze_count_total: number;
+  // Response patterns
+  avg_response_time_minutes: number;
+  no_response_before_hour: number;  // 7 = 7 AM (delay morning reminders)
+  no_response_after_hour: number;   // 23 = 11 PM
+  // Productive hours (when user completes most tasks)
+  productive_hours: number[];       // [9, 10, 11, 20, 21, 22]
+  // Procrastination patterns
+  most_postponed_category: string;
+  most_postponed_task_id: string | null;
+  // Habit streaks at risk
+  habits_at_risk: string[];
+  // Completion patterns
+  task_completion_rate: number;     // 0-1
+  habit_completion_rate: number;    // 0-1
+  // Notification response rate
+  notification_response_rate: number;  // 0-1
+  // Last updated
+  updated_at: string;
+}
+
+// ── V4: Recovery Queue Item ──
+export interface RecoveryItem {
+  id: string;
+  task_id?: string;
+  habit_id?: string;
+  title: string;
+  reason: string;              // why it's in recovery
+  missed_count: number;
+  suggested_actions: NotificationAction[];
+  ai_suggestion: string;       // AI recommendation
   created_at: string;
 }

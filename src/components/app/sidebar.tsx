@@ -8,7 +8,7 @@ import {
   LayoutDashboard, ListChecks, FolderTree, Sunrise, Repeat,
   Wallet, CalendarDays, BarChart3, Settings, Flame, X,
   Brain, Sparkles, BookOpen, BookMarked, Cpu, FileText, LogOut,
-  Bell, MessageCircle, Coffee,
+  Bell, MessageCircle, Coffee, RotateCcw,
 } from 'lucide-react';
 import { SectionIcon } from './icon';
 
@@ -19,13 +19,15 @@ export type ViewKey =
   | 'ai-chat' | 'ai-planner' | 'ai-reports'
   | 'journal' | 'knowledge' | 'dev'
   // V3 new views
-  | 'memory' | 'briefing' | 'notifications' | 'history';
+  | 'memory' | 'briefing' | 'notifications' | 'history'
+  // V4 new views
+  | 'notif-prefs' | 'recovery';
 
 interface NavItem {
   key: ViewKey;
   label: string;
   icon: typeof LayoutDashboard;
-  badge?: 'count' | 'wasted' | 'streak' | 'memories' | 'notifications';
+  badge?: 'count' | 'wasted' | 'streak' | 'memories' | 'notifications' | 'recovery';
   group: 'main' | 'life' | 'ai' | 'system';
 }
 
@@ -48,6 +50,8 @@ const NAV: NavItem[] = [
   { key: 'ai-planner', label: 'AI Planner',   icon: Sparkles, group: 'ai' },
   { key: 'memory',     label: 'AI Memory',     icon: Brain, badge: 'memories', group: 'ai' },
   { key: 'notifications', label: 'Notifications', icon: Bell, badge: 'notifications', group: 'ai' },
+  { key: 'notif-prefs',label: 'Notif Preferences', icon: Bell, group: 'ai' },
+  { key: 'recovery',   label: 'Recovery Queue', icon: RotateCcw, badge: 'recovery', group: 'ai' },
   { key: 'ai-reports', label: 'AI Reports',   icon: FileText, group: 'ai' },
   { key: 'history',    label: 'Chat History', icon: MessageCircle, group: 'ai' },
   // System
@@ -91,6 +95,8 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
 
   // Pending notifications
   const pendingNotifications = notifications.filter((n) => n.status === 'pending').length;
+  const recoveryQueue = useStore((s) => s.recoveryQueue);
+  const recoveryCount = recoveryQueue.length;
 
   // Current habit streak (best of all habits)
   function getStreak(log: Record<string, boolean> | undefined) {
@@ -229,6 +235,13 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
                     badge = (
                       <span className="ml-auto text-xs bg-red-500/15 text-red-500 rounded-full px-2 py-0.5 font-medium">
                         {pendingNotifications}
+                      </span>
+                    );
+                  }
+                  if (item.badge === 'recovery' && recoveryCount > 0) {
+                    badge = (
+                      <span className="ml-auto text-xs bg-orange-500/15 text-orange-500 rounded-full px-2 py-0.5 font-medium">
+                        {recoveryCount}
                       </span>
                     );
                   }

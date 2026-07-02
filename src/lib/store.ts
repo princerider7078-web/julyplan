@@ -9,6 +9,8 @@ import type {
   RepeatRule, JournalEntry, KnowledgeNote, AIChatMessageStore,
   AIMemoryItem, MemoryCategory, MemoryImportance, MemorySource,
   ConversationSummary, AINotification,
+  NotificationPreferences, LearningProfile, RecoveryItem,
+  NotificationCategory, NotificationTone, NotificationAction,
 } from './types';
 import {
   DEFAULT_SECTIONS, DEFAULT_HABITS, DEFAULT_ROUTINE,
@@ -22,7 +24,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   maxWastedDays: 2,
   soundEnabled: true,
   notificationsEnabled: true,
-  // AI profile — defaults to z-ai provider (built-in, no key needed)
   aiProvider: 'zai',
   aiModelChat: 'glm-4.6',
   aiModelPlanning: 'glm-4.6',
@@ -30,9 +31,44 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiTemperature: 0.7,
   aiMaxTokens: 1500,
   aiEnabledModules: ['tasks', 'habits', 'health', 'finance', 'journal'],
-  // AI backend URL — empty means use relative /api/ai (web mode).
-  // For APK, set to absolute URL like "https://your-deploy.example.com"
   aiBackendUrl: '',
+};
+
+// V4: Default notification preferences — smart, learning-enabled
+const DEFAULT_NOTIF_PREFS: NotificationPreferences = {
+  tone: 'friendly',
+  quiet_hours_enabled: true,
+  quiet_hours_start: '22:00',
+  quiet_hours_end: '07:00',
+  critical_bypass_quiet: true,
+  categories: {
+    task: true, habit: true, health: true, work: true, study: true,
+    finance: true, goal_progress: true, ai_insights: true, deadlines: true,
+    personal: true, achievements: true, weekly_reports: true,
+  },
+  batching_enabled: true,
+  batching_window_minutes: 15,
+  escalation_enabled: true,
+  escalation_delay_minutes: 10,
+  learning_enabled: true,
+  default_snooze_minutes: 15,
+};
+
+// V4: Default learning profile — adapts over time
+const DEFAULT_LEARNING_PROFILE: LearningProfile = {
+  avg_snooze_minutes: 15,
+  snooze_count_total: 0,
+  avg_response_time_minutes: 5,
+  no_response_before_hour: 6,
+  no_response_after_hour: 23,
+  productive_hours: [9, 10, 11, 20, 21, 22],
+  most_postponed_category: '',
+  most_postponed_task_id: null,
+  habits_at_risk: [],
+  task_completion_rate: 0,
+  habit_completion_rate: 0,
+  notification_response_rate: 0,
+  updated_at: new Date().toISOString(),
 };
 
 interface StoreActions {
@@ -85,6 +121,16 @@ interface StoreActions {
   addAINotification: (input: Omit<AINotification, 'id' | 'created_at'>) => string;
   updateAINotification: (id: string, patch: Partial<AINotification>) => void;
   dismissAINotification: (id: string) => void;
+  // V4: smart notification actions
+  snoozeAINotification: (id: string, minutes?: number) => void;
+  escalateNotification: (id: string) => void;
+  completeAINotification: (id: string) => void;
+  moveToRecovery: (id: string) => void;
+  updateNotificationPreferences: (patch: Partial<NotificationPreferences>) => void;
+  updateLearningProfile: (patch: Partial<LearningProfile>) => void;
+  addRecoveryItem: (input: Omit<RecoveryItem, 'id' | 'created_at'>) => string;
+  deleteRecoveryItem: (id: string) => void;
+  recordSnoozeAction: (notificationId: string, snoozeMinutes: number) => void;
   // settings
   updateSettings: (patch: Partial<AppSettings>) => void;
   // system
@@ -111,6 +157,9 @@ const initialAppState: AppState = {
   memories: [],
   conversationSummaries: [],
   aiNotifications: [],
+  notificationPreferences: DEFAULT_NOTIF_PREFS,
+  learningProfile: DEFAULT_LEARNING_PROFILE,
+  recoveryQueue: [],
   lastOpened: null,
   initialized: true,
 };
@@ -495,6 +544,113 @@ export const useStore = create<Store>()(
           ),
         })),
 
+      // ---------- V4: Smart Notification Actions ----------
+      snoozeAINotification: (id, minutes) =>
+        set((s) => ({
+          aiNotifications: s.aiNotifications.map((n) => {
+            if (n.id !== id) return n;
+            const snoozeMin = minutes ?? s.notificationPreferences.default_snooze_minutes;
+            const snoozeUntil = new Date(Date.now() + snoozeMin * 60000).toISOString();
+            return {
+              ...n,
+              status: 'snoozed' as const,
+              scheduled_at: snoozeUntil,
+              snooze_count: (n.snooze_count ?? 0) + 1,
+            };
+          }),
+        })),
+
+      escalateNotification: (id) =>
+        set((s) => ({
+          aiNotifications: s.aiNotifications.map((n) =>
+            n.id === id
+              ? {
+                  ...n,
+                  escalation_level: Math.min(4, (n.escalation_level ?? 0) + 1) as 0 | 1 | 2 | 3 | 4,
+                  scheduled_at: new Date(
+                    Date.now() + s.notificationPreferences.escalation_delay_minutes * 60000,
+                  ).toISOString(),
+                  status: 'pending' as const,
+                }
+              : n,
+          ),
+        })),
+
+      completeAINotification: (id) =>
+        set((s) => ({
+          aiNotifications: s.aiNotifications.map((n) =>
+            n.id === id ? { ...n, status: 'completed' as const } : n,
+          ),
+        })),
+
+      moveToRecovery: (id) =>
+        set((s) => {
+          const notif = s.aiNotifications.find((n) => n.id === id);
+          if (!notif) return s;
+          const recoveryItem: RecoveryItem = {
+            id: `r-${uuid().slice(0, 8)}`,
+            task_id: notif.linked_entity_type === 'task' ? notif.linked_entity_id : undefined,
+            habit_id: notif.linked_entity_type === 'habit' ? notif.linked_entity_id : undefined,
+            title: notif.title,
+            reason: notif.reasoning ?? 'Moved to recovery after multiple escalations',
+            missed_count: (notif.snooze_count ?? 0) + (notif.escalation_level ?? 0),
+            suggested_actions: ['complete', 'reschedule', 'break_subtasks', 'convert_habit', 'skip'],
+            ai_suggestion: 'Pick the action that fits — break into subtasks if it feels too big.',
+            created_at: new Date().toISOString(),
+          };
+          return {
+            recoveryQueue: [recoveryItem, ...s.recoveryQueue].slice(0, 50),
+            aiNotifications: s.aiNotifications.map((n) =>
+              n.id === id ? { ...n, status: 'recovery' as const } : n,
+            ),
+          };
+        }),
+
+      updateNotificationPreferences: (patch) =>
+        set((s) => ({
+          notificationPreferences: { ...s.notificationPreferences, ...patch },
+        })),
+
+      updateLearningProfile: (patch) =>
+        set((s) => ({
+          learningProfile: {
+            ...s.learningProfile,
+            ...patch,
+            updated_at: new Date().toISOString(),
+          },
+        })),
+
+      addRecoveryItem: (input) => {
+        const id = `r-${uuid().slice(0, 8)}`;
+        const item: RecoveryItem = {
+          id,
+          created_at: new Date().toISOString(),
+          ...input,
+        };
+        set((s) => ({ recoveryQueue: [item, ...s.recoveryQueue].slice(0, 50) }));
+        return id;
+      },
+
+      deleteRecoveryItem: (id) =>
+        set((s) => ({ recoveryQueue: s.recoveryQueue.filter((r) => r.id !== id) })),
+
+      // V4: Record snooze action + update learning profile (avg snooze duration)
+      recordSnoozeAction: (notificationId, snoozeMinutes) =>
+        set((s) => {
+          const total = s.learningProfile.snooze_count_total;
+          const newAvg = total === 0
+            ? snoozeMinutes
+            : Math.round(((s.learningProfile.avg_snooze_minutes * total) + snoozeMinutes) / (total + 1));
+          return {
+            learningProfile: {
+              ...s.learningProfile,
+              avg_snooze_minutes: newAvg,
+              snooze_count_total: total + 1,
+              updated_at: new Date().toISOString(),
+            },
+          };
+        }),
+
       // ---------- Settings ----------
       updateSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
@@ -518,6 +674,9 @@ export const useStore = create<Store>()(
           memories: s.memories,
           conversationSummaries: s.conversationSummaries,
           aiNotifications: s.aiNotifications,
+          notificationPreferences: s.notificationPreferences,
+          learningProfile: s.learningProfile,
+          recoveryQueue: s.recoveryQueue,
           settings: s.settings,
         }, null, 2);
       },
@@ -539,6 +698,9 @@ export const useStore = create<Store>()(
             memories: data.memories ?? [],
             conversationSummaries: data.conversationSummaries ?? [],
             aiNotifications: data.aiNotifications ?? [],
+            notificationPreferences: { ...DEFAULT_NOTIF_PREFS, ...(data.notificationPreferences ?? {}) },
+            learningProfile: { ...DEFAULT_LEARNING_PROFILE, ...(data.learningProfile ?? {}) },
+            recoveryQueue: data.recoveryQueue ?? [],
             settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
           });
           return true;
@@ -553,22 +715,30 @@ export const useStore = create<Store>()(
     {
       name: 'july-plan-store',
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 4,
       // Backfill missing fields from defaults — important when migrating
-      // between V1 → V2 → V3 schemas. Without this, settings.aiTemperature
-      // is undefined and crashes .toFixed(1).
+      // between V1 → V2 → V3 → V4 schemas.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppState>;
         const c = current as AppState;
         return {
           ...c,
           ...p,
-          // Deep-merge settings so missing AI fields fall back to defaults
           settings: { ...c.settings, ...(p.settings ?? {}) },
-          // Ensure V3 arrays exist even on old persisted state
           memories: p.memories ?? c.memories,
           conversationSummaries: p.conversationSummaries ?? c.conversationSummaries,
           aiNotifications: p.aiNotifications ?? c.aiNotifications,
+          // V4: deep-merge notification preferences + learning profile
+          notificationPreferences: {
+            ...c.notificationPreferences,
+            ...(p.notificationPreferences ?? {}),
+            categories: {
+              ...c.notificationPreferences.categories,
+              ...((p.notificationPreferences ?? {}).categories ?? {}),
+            },
+          },
+          learningProfile: { ...c.learningProfile, ...(p.learningProfile ?? {}) },
+          recoveryQueue: p.recoveryQueue ?? c.recoveryQueue,
         };
       },
     },

@@ -27,6 +27,9 @@ import { MemoryManagerView } from '@/components/app/views/memory-manager';
 import { BriefingView } from '@/components/app/views/briefing';
 import { NotificationCenterView } from '@/components/app/views/notification-center';
 import { ConversationHistoryView } from '@/components/app/views/conversation-history';
+// V4 views
+import { NotificationPreferencesView } from '@/components/app/views/notification-preferences';
+import { RecoveryQueueView } from '@/components/app/views/recovery-queue';
 import { Button } from '@/components/ui/button';
 import { Menu, Plus, Bell, Loader2 } from 'lucide-react';
 import { todayISO, formatDateLong } from '@/lib/utils';
@@ -173,6 +176,8 @@ export default function Home() {
               {view === 'briefing' && 'Daily Briefing'}
               {view === 'notifications' && 'AI Notification Center'}
               {view === 'history' && 'Conversation History'}
+              {view === 'notif-prefs' && 'Notification Preferences'}
+              {view === 'recovery' && 'Recovery Queue'}
             </div>
             <div className="text-xs text-muted-foreground truncate">
               {formatDateLong(today)}
@@ -217,8 +222,11 @@ export default function Home() {
           {/* V3 views */}
           {view === 'memory' && <MemoryManagerView />}
           {view === 'briefing' && <BriefingView onNavigate={setView} />}
-          {view === 'notifications' && <NotificationCenterView />}
+          {view === 'notifications' && <NotificationCenterView onNavigate={setView} />}
           {view === 'history' && <ConversationHistoryView />}
+          {/* V4 views */}
+          {view === 'notif-prefs' && <NotificationPreferencesView />}
+          {view === 'recovery' && <RecoveryQueueView />}
         </main>
 
         {/* Footer */}
