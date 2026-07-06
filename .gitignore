@@ -55,6 +55,10 @@ android/app/release/
 *.ap_
 *.dex
 
+# BUT allow APK in the apk/ folder for download
+!apk/
+!apk/*.apk
+
 # Android signing secrets — NEVER commit
 android/keystore/
 *.keystore
