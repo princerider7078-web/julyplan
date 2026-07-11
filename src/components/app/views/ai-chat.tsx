@@ -40,6 +40,7 @@ export function AIChatView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<{ message: string; execute: () => void } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +54,24 @@ export function AIChatView() {
   async function handleSend(rawMessage: string) {
     const message = rawMessage.trim();
     if (!message || busy) return;
+
+    // Check for pending confirmation (yes/no)
+    if (pendingConfirm) {
+      const lower = message.toLowerCase();
+      if (lower === 'yes' || lower === 'y' || lower === 'ok' || lower === 'haan' || lower === 'confirm') {
+        pendingConfirm.execute();
+        appendAIChat({ role: 'user', content: message });
+        appendAIChat({ role: 'assistant', content: '✅ Done. Deleted successfully.' });
+        setPendingConfirm(null);
+        return;
+      } else {
+        appendAIChat({ role: 'user', content: message });
+        appendAIChat({ role: 'assistant', content: '❌ Cancelled. Nothing was deleted.' });
+        setPendingConfirm(null);
+        return;
+      }
+    }
+
     setError(null);
     appendAIChat({ role: 'user', content: message });
     setInput('');
@@ -105,7 +124,37 @@ export function AIChatView() {
           setBusy(false);
           return;
         }
-        // If unknown, fall through to regular AI chat
+      }
+
+      // ----- Step 1b: Check for universal app actions (habits, finance, sections, etc.) -----
+      const { parseAppAction, executeAppAction } = await import('@/lib/ai/app-actions');
+      const appCmd = await parseAppAction(message, undefined, {
+        profile: {
+          provider: settings.aiProvider ?? 'zai',
+          model_chat: settings.aiModelChat ?? 'glm-4.6',
+          model_planning: settings.aiModelPlanning ?? 'glm-4.6',
+          model_reports: settings.aiModelReports ?? 'glm-4.6',
+          fallback_model: 'glm-4.5',
+          temperature: 0.1,
+          max_tokens: 500,
+          prompt_style: 'coach',
+          enabled_modules_json: settings.aiEnabledModules ?? [],
+        },
+        userId: profile?.id,
+      });
+
+      // If it's a non-task action (task is handled above), execute it
+      if (appCmd.module !== 'task' || appCmd.action !== 'show') {
+        const result = executeAppAction(appCmd);
+        if (result.message) {
+          appendAIChat({ role: 'assistant', content: result.message });
+        }
+        // If needs confirmation, store the pending action for Yes/No response
+        if (result.needsConfirmation && result.executeAfterConfirm) {
+          setPendingConfirm({ message: result.confirmationMessage ?? 'Confirm?', execute: result.executeAfterConfirm });
+        }
+        setBusy(false);
+        return;
       }
 
       // ----- Step 1b: Routine commands (edit routine blocks via chat) -----

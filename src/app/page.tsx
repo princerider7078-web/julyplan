@@ -36,6 +36,8 @@ import { NotificationToasts } from '@/components/app/notification-toasts';
 import { Button } from '@/components/ui/button';
 import { Menu, Plus, Bell, Loader2 } from 'lucide-react';
 import { todayISO, formatDateLong } from '@/lib/utils';
+import { SyncIndicator } from '@/components/app/sync-indicator';
+import { PageTransition } from '@/components/app/animations';
 import { getNotificationLog } from '@/lib/notifications/service';
 
 export default function Home() {
@@ -135,9 +137,7 @@ export default function Home() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
-          <div className="inline-flex h-16 w-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 items-center justify-center text-white text-3xl font-bold shadow-lg shadow-orange-500/30">
-            J
-          </div>
+          <img src="/logo.svg" alt="July Plan" className="h-16 w-16 rounded-2xl shadow-lg shadow-orange-500/30" />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading July Plan…
@@ -205,6 +205,7 @@ export default function Home() {
               {isOffline && ' · offline'}
             </div>
           </div>
+          <SyncIndicator className="mr-1" />
           <Button
             variant="ghost"
             size="icon"
@@ -229,6 +230,7 @@ export default function Home() {
 
         {/* Main content */}
         <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto">
+          <PageTransition viewKey={view}>
           {view === 'dashboard' && <DashboardView onNavigate={setView} onAddTask={() => setTaskDialogOpen(true)} />}
           {view === 'today' && <TodayView onAddTask={() => setTaskDialogOpen(true)} />}
           {view === 'tasks' && <TasksView />}
@@ -253,6 +255,7 @@ export default function Home() {
           {/* V4 views */}
           {view === 'notif-prefs' && <NotificationPreferencesView />}
           {view === 'recovery' && <RecoveryQueueView />}
+          </PageTransition>
         </main>
 
         {/* Footer */}

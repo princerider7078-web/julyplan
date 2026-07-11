@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth/context';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -16,9 +17,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useTheme } from 'next-themes';
 import { useToast } from '@/hooks/use-toast';
+import { SyncIndicator } from '@/components/app/sync-indicator';
 import {
   Sun, Moon, Monitor, Download, Upload, RotateCcw, Bell, Volume2,
-  Droplet, Beef, AlertTriangle, CalendarX,
+  Droplet, Beef, AlertTriangle, CalendarX, RefreshCw, Cloud,
 } from 'lucide-react';
 
 export function SettingsView() {
@@ -30,8 +32,10 @@ export function SettingsView() {
 
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
+  const { profile, isOffline } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   function handleExport() {
     const json = exportData();
@@ -195,6 +199,42 @@ export function SettingsView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Cloud Sync */}
+      {!isOffline && profile && profile.id !== 'offline-user' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Cloud className="h-4 w-4 text-primary" />
+              Cloud Sync
+            </CardTitle>
+            <CardDescription>
+              Your data syncs to Supabase automatically · <SyncIndicator className="inline-flex" />
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={syncing}
+              onClick={async () => {
+                setSyncing(true);
+                const { pullAllUserData } = await import('@/lib/sync');
+                await pullAllUserData(profile.id);
+                setSyncing(false);
+                toast({ title: 'Sync complete', description: 'All data pulled from cloud.' });
+              }}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync Now'}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">
+              Pulls all data from Supabase (tasks, habits, finance, journal, knowledge, memories, routine, sections).
+              Use this if auto-sync missed something.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Data management */}
       <Card>

@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { ConfirmDeleteDialog } from '@/components/app/confirm-delete-dialog';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ export function HabitsView() {
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('Health');
   const [newTarget, setNewTarget] = useState('daily');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const today = todayISO();
   const last7 = getLast7Days();
@@ -213,7 +215,7 @@ export function HabitsView() {
                   <Progress value={wkPct} className="h-1.5 w-16 hidden md:block" />
                   <Button
                     variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500"
-                    onClick={() => deleteHabit(h.id)}
+                    onClick={() => setDeleteTarget({ id: h.id, name: h.name })}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -283,6 +285,14 @@ export function HabitsView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        onConfirm={() => { if (deleteTarget) deleteHabit(deleteTarget.id); }}
+        itemName={deleteTarget?.name ?? ''}
+        itemType="habit"
+      />
     </div>
   );
 }

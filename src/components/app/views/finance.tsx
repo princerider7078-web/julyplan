@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
+import { ConfirmDeleteDialog } from '@/components/app/confirm-delete-dialog';
 import { useStore } from '@/lib/store';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,10 +28,11 @@ export function FinanceView() {
   const addEntry = useStore((s) => s.addFinanceEntry);
   const deleteEntry = useStore((s) => s.deleteFinanceEntry);
   const addTarget = useStore((s) => s.addFinanceTarget);
-  const deleteTarget = useStore((s) => s.deleteFinanceTarget);
+  const deleteFinanceTargetAction = useStore((s) => s.deleteFinanceTarget);
 
   const [addOpen, setAddOpen] = useState(false);
   const [targetOpen, setTargetOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -242,7 +244,7 @@ export function FinanceView() {
                     </div>
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500"
-                      onClick={() => deleteTarget(t.id)}
+                      onClick={() => deleteFinanceTargetAction(t.id)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -299,7 +301,7 @@ export function FinanceView() {
                 </div>
                 <Button
                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-500"
-                  onClick={() => deleteEntry(f.id)}
+                  onClick={() => setDeleteTarget({ id: f.id, name: f.title })}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -435,6 +437,14 @@ export function FinanceView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        onConfirm={() => { if (deleteTarget) deleteEntry(deleteTarget.id); }}
+        itemName={deleteTarget?.name ?? ''}
+        itemType="finance entry"
+      />
     </div>
   );
 }

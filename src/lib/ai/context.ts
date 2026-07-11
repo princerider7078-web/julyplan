@@ -33,7 +33,7 @@ export function buildLocalContext(opts: {
   // Otherwise fall back to whatever was passed in.
   let memories = opts.memories;
   if (opts.userQuery && !opts.memories) {
-    const retrieved = retrieveRelevantMemories(opts.userQuery, 8);
+    const retrieved = retrieveRelevantMemories(opts.userQuery, 5);  // trimmed from 8 for speed
     memories = retrieved.map((m) => ({
       id: m.id,
       memory_type: m.category,

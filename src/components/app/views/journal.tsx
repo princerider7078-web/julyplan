@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { ConfirmDeleteDialog } from '@/components/app/confirm-delete-dialog';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
 import { aiJournalSummary } from '@/lib/ai';
@@ -34,6 +35,7 @@ export function JournalView() {
   const [date, setDate] = useState(todayISO());
   const [reflectionType, setReflectionType] = useState<'daily' | 'weekly' | 'monthly' | 'free'>('daily');
   const [aiBusy, setAiBusy] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   function handleOpen() {
     setTitle(''); setContent(''); setMood(7); setDate(todayISO()); setReflectionType('daily');
@@ -155,7 +157,7 @@ export function JournalView() {
                     </Button>
                     <Button
                       size="sm" variant="ghost" className="text-muted-foreground hover:text-red-500"
-                      onClick={() => deleteJournalEntry(entry.id)}
+                      onClick={() => setDeleteTarget({ id: entry.id, name: entry.title ?? 'entry' })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -243,6 +245,14 @@ export function JournalView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        onConfirm={() => { if (deleteTarget) deleteJournalEntry(deleteTarget.id); }}
+        itemName={deleteTarget?.name ?? ''}
+        itemType="journal entry"
+      />
     </div>
   );
 }

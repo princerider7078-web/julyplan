@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { ConfirmDeleteDialog } from '@/components/app/confirm-delete-dialog';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
 import { aiKnowledgeSummary } from '@/lib/ai';
@@ -35,6 +36,7 @@ export function KnowledgeView() {
   const [url, setUrl] = useState('');
   const [sourceType, setSourceType] = useState('note');
   const [aiBusy, setAiBusy] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   function handleOpen() {
     setTitle(''); setContent(''); setTags(''); setUrl(''); setSourceType('note');
@@ -193,7 +195,7 @@ export function KnowledgeView() {
                     </Button>
                     <Button
                       size="sm" variant="ghost" className="text-muted-foreground hover:text-red-500"
-                      onClick={() => deleteKnowledgeNote(note.id)}
+                      onClick={() => setDeleteTarget({ id: note.id, name: note.title })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -302,6 +304,7 @@ export function KnowledgeView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDeleteDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) deleteKnowledgeNote(deleteTarget.id); }} itemName={deleteTarget?.name ?? ""} itemType="note" />
     </div>
   );
 }

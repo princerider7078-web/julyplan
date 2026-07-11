@@ -16,10 +16,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "July Plan V2 — Personal AI Operating System",
+  title: "July Plan — Personal AI Operating System",
   description: "Cloud-powered personal AI OS. Tasks, habits, health, voice, mind, finance, journal — connected by a single AI brain.",
   keywords: ["July Plan", "AI OS", "Supabase", "task manager", "habit tracker"],
   authors: [{ name: "July Plan" }],
+  icons: {
+    icon: "/logo.svg",
+    apple: "/logo.svg",
+  },
 };
 
 export default function RootLayout({
