@@ -137,7 +137,7 @@ export default function Home() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
-          <img src="/logo.svg" alt="July Plan" className="h-16 w-16 rounded-2xl shadow-lg shadow-orange-500/30" />
+          <img src="/logo.png" alt="July Plan" className="h-16 w-16 rounded-2xl shadow-lg shadow-orange-500/30" />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading July Plan…

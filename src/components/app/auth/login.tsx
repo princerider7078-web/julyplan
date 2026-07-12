@@ -37,7 +37,7 @@ export function LoginScreen() {
       <div className="w-full max-w-md space-y-6">
         {/* Brand */}
         <div className="text-center">
-          <img src="/logo.svg" alt="July Plan" className="h-20 w-20 rounded-2xl shadow-lg shadow-orange-500/30 mb-4 mx-auto" />
+          <img src="/logo.png" alt="July Plan" className="h-20 w-20 rounded-2xl shadow-lg shadow-orange-500/30 mb-4 mx-auto" />
           <h1 className="text-3xl font-bold tracking-tight">July Plan</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Personal AI Operating System · V2

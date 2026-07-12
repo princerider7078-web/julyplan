@@ -162,7 +162,7 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
         {/* Brand */}
         <div className="flex items-center justify-between px-5 h-16 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="July Plan" className="h-9 w-9 rounded-xl shadow-md shadow-orange-500/20" />
+            <img src="/logo.png" alt="July Plan" className="h-9 w-9 rounded-xl shadow-md shadow-orange-500/20" />
             <div className="leading-tight">
               <div className="font-bold text-sm">July Plan</div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">

@@ -154,8 +154,8 @@ async function fireWebNotification(
       reg.showNotification(title, {
         body,
         tag: extra?.taskId ?? `july-plan-${Date.now()}`,
-        icon: '/logo.svg',
-        badge: '/logo.svg',
+        icon: '/logo.png',
+        badge: '/logo.png',
         requireInteraction: false,
         data: extra,
       });
@@ -171,7 +171,7 @@ async function fireWebNotification(
       const notif = new Notification(title, {
         body,
         tag: extra?.taskId ?? `july-plan-${Date.now()}`,
-        icon: '/logo.svg',
+        icon: '/logo.png',
       });
       shown = true;
       // Auto-close after 10 seconds
