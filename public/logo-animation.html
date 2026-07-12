@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>July Plan — Premium Logo Animation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #000000;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "Inter", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .stage {
+    width: min(560px, 90vw);
+    aspect-ratio: 400 / 480;
+    position: relative;
+    opacity: 0;
+    will-change: opacity, transform;
+  }
+
+  .stage svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    display: block;
+  }
+
+  /* GPU-hint for animated SVG nodes */
+  #circle, #circleGlow, #arrowShaft, #arrowHead,
+  #jLetter, #pLetter, #pClipRect,
+  #line1, #line2, #line3,
+  #checkmark, #brandText, #sweepGlow, #sweepGlow2 {
+    will-change: transform, opacity, stroke-dashoffset;
+    transform-box: fill-box;
+  }
+
+  .hud {
+    position: fixed;
+    left: 20px;
+    bottom: 16px;
+    color: rgba(255, 255, 255, 0.32);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-family: "SF Mono", "JetBrains Mono", monospace;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .hud b {
+    color: rgba(255, 255, 255, 0.55);
+    font-weight: 500;
+  }
+
+  .replay {
+    position: fixed;
+    right: 20px;
+    bottom: 16px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.7);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    backdrop-filter: blur(10px);
+  }
+  .replay:hover {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-color: rgba(255,255,255,0.25);
+  }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <svg viewBox="0 0 400 480" xmlns="http://www.w3.org/2000/svg" aria-label="July Plan logo animation">
+    <defs>
+      <!-- Circle gradient: deep navy -> teal -->
+      <linearGradient id="circleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%"  stop-color="#0A2540"/>
+        <stop offset="45%" stop-color="#0E5C8B"/>
+        <stop offset="100%" stop-color="#18A8A0"/>
+      </linearGradient>
+
+      <!-- J gradient: navy (bottom) -> teal (top) -->
+      <linearGradient id="jGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+        <stop offset="0%"  stop-color="#0A2540"/>
+        <stop offset="100%" stop-color="#18A8A0"/>
+      </linearGradient>
+
+      <!-- P gradient: teal -> green -->
+      <linearGradient id="pGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%"  stop-color="#18A8A0"/>
+        <stop offset="100%" stop-color="#3DDC97"/>
+      </linearGradient>
+
+      <!-- Arrow gradient -->
+      <linearGradient id="arrowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%"  stop-color="#18A8A0"/>
+        <stop offset="100%" stop-color="#7CF0C0"/>
+      </linearGradient>
+
+      <!-- Brand text gradient -->
+      <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"  stop-color="#FFFFFF"/>
+        <stop offset="60%" stop-color="#E8F4F1"/>
+        <stop offset="100%" stop-color="#7CF0C0"/>
+      </linearGradient>
+
+      <!-- Soft glow filter (for circle blur-while-drawing) -->
+      <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="3.5" result="blur"/>
+        <feMerge>
+          <feMergeNode in="blur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+
+      <!-- Stronger glow for the sweep -->
+      <filter id="sweepBlur" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="6"/>
+      </filter>
+
+      <!-- P reveal clip (left -> right) -->
+      <clipPath id="pClip">
+        <rect x="200" y="100" width="0" height="220" id="pClipRect"/>
+      </clipPath>
+
+      <!-- Radial highlight used for the final glow sweep -->
+      <radialGradient id="sweepRadial" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.9"/>
+        <stop offset="60%" stop-color="#7CF0C0" stop-opacity="0.45"/>
+        <stop offset="100%" stop-color="#18A8A0" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+
+    <!-- ============ SCENE 1: CIRCULAR PATH DRAWING ============ -->
+    <!-- Clockwise circle path: bottom -> left -> top -> right -> bottom
+         (sweep=1 with this point order renders as a true circle on the inner radius) -->
+    <!-- Soft glow underlay (blurred while drawing, fades out after) -->
+    <path id="circleGlow"
+          d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345"
+          fill="none"
+          stroke="url(#circleGrad)"
+          stroke-width="8"
+          stroke-linecap="round"
+          opacity="0"
+          filter="url(#softGlow)"/>
+
+    <!-- Main crisp circle stroke -->
+    <path id="circle"
+          d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345"
+          fill="none"
+          stroke="url(#circleGrad)"
+          stroke-width="3"
+          stroke-linecap="round"/>
+
+    <!-- ============ SCENE 2: ARROW GROWTH ============ -->
+    <g id="arrowGroup">
+      <!-- Arrow shaft — drawn via trim (stroke-dashoffset) -->
+      <path id="arrowShaft"
+            d="M 175,140 Q 218,108 252,82"
+            fill="none"
+            stroke="url(#arrowGrad)"
+            stroke-width="3.5"
+            stroke-linecap="round"/>
+      <!-- Arrowhead — pops out with overshoot after shaft trims in -->
+      <path id="arrowHead"
+            d="M 240,92 L 274,60 L 258,98 Z"
+            fill="#7CF0C0"
+            opacity="0"
+            style="transform-origin: 268px 78px;"/>
+    </g>
+
+    <!-- ============ SCENE 3: J + P LETTERS ============ -->
+    <!-- J: revealed bottom -> top via stroke trim (path defined bottom-up) -->
+    <path id="jLetter"
+          d="M 152,243 Q 152,265 175,265 Q 198,265 198,243 L 198,140"
+          fill="none"
+          stroke="url(#jGrad)"
+          stroke-width="9"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+
+    <!-- P: revealed left -> right via clip-path -->
+    <g clip-path="url(#pClip)">
+      <path id="pLetter"
+            d="M 218,278 L 218,138 Q 268,138 268,176 Q 268,214 218,214"
+            fill="none"
+            stroke="url(#pGrad)"
+            stroke-width="9"
+            stroke-linecap="round"
+            stroke-linejoin="round"/>
+    </g>
+
+    <!-- ============ SCENE 4: LEFT PROGRESS LINES ============ -->
+    <g id="progressLines">
+      <rect id="line1" x="62" y="178" width="56" height="4" rx="2" fill="#3DDC97" opacity="0"/>
+      <rect id="line2" x="62" y="198" width="68" height="4" rx="2" fill="#2D9CDB" opacity="0"/>
+      <rect id="line3" x="62" y="218" width="48" height="4" rx="2" fill="#6B7280" opacity="0"/>
+    </g>
+
+    <!-- ============ SCENE 5: CHECKMARK BOUNCE ============ -->
+    <path id="checkmark"
+          d="M 222,270 L 236,286 L 268,252"
+          fill="none"
+          stroke="#18A8A0"
+          stroke-width="5.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          opacity="0"
+          style="transform-origin: 245px 269px;"/>
+
+    <!-- ============ SCENE 6: BRAND TEXT FADE IN ============ -->
+    <text id="brandText"
+          x="200" y="418"
+          text-anchor="middle"
+          font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
+          font-size="34"
+          font-weight="300"
+          letter-spacing="20"
+          fill="url(#textGrad)"
+          opacity="0">July Plan</text>
+
+    <!-- ============ SCENE 7: GLOW SWEEP ============ -->
+    <!-- A short bright dash that travels around the circle (same clockwise path) -->
+    <path id="sweepGlow"
+          d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345"
+          fill="none"
+          stroke="#FFFFFF"
+          stroke-width="6"
+          stroke-linecap="round"
+          opacity="0"
+          filter="url(#sweepBlur)"/>
+
+    <!-- Secondary softer halo following the sweep -->
+    <path id="sweepGlow2"
+          d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345"
+          fill="none"
+          stroke="#7CF0C0"
+          stroke-width="14"
+          stroke-linecap="round"
+          opacity="0"
+          filter="url(#sweepBlur)"/>
+  </svg>
+</div>
+
+<div class="hud"><b>July Plan</b> &nbsp;·&nbsp; 4.5s loop &nbsp;·&nbsp; 60 FPS &nbsp;·&nbsp; Apple Keynote style</div>
+<button class="replay" id="replayBtn">Replay</button>
+
+<!-- GSAP core + CustomEase (for the cubic-bezier(0.22, 1, 0.36, 1) curve) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/CustomEase.min.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  window.addEventListener('load', function () {
+    gsap.registerPlugin(CustomEase);
+
+    // --- The signature easing: cubic-bezier(0.22, 1, 0.36, 1) ---
+    CustomEase.create("apple", "M0,0 C0.22,1 0.36,1 1,1");
+
+    // --- Force a stable 60 FPS tick ---
+    gsap.ticker.fps(60);
+    gsap.defaults({ ease: "apple" });
+
+    // --- Cache DOM refs ---
+    const stage       = document.getElementById('stage');
+    const circle      = document.getElementById('circle');
+    const circleGlow  = document.getElementById('circleGlow');
+    const arrowShaft  = document.getElementById('arrowShaft');
+    const arrowHead   = document.getElementById('arrowHead');
+    const jLetter     = document.getElementById('jLetter');
+    const pLetter     = document.getElementById('pLetter');
+    const pClipRect   = document.getElementById('pClipRect');
+    const line1       = document.getElementById('line1');
+    const line2       = document.getElementById('line2');
+    const line3       = document.getElementById('line3');
+    const checkmark   = document.getElementById('checkmark');
+    const brandText   = document.getElementById('brandText');
+    const sweepGlow   = document.getElementById('sweepGlow');
+    const sweepGlow2  = document.getElementById('sweepGlow2');
+    const replayBtn   = document.getElementById('replayBtn');
+
+    // --- Measure true path lengths so the trim animations are exact ---
+    const circleLen  = circle.getTotalLength();   // ~911
+    const shaftLen   = arrowShaft.getTotalLength();
+    const jLen       = jLetter.getTotalLength();
+
+    // --- Set initial stroke-dash states (hidden) ---
+    function resetStrokes() {
+      [circle, circleGlow, sweepGlow, sweepGlow2].forEach(el => {
+        el.style.strokeDasharray  = circleLen;
+        el.style.strokeDashoffset = circleLen;
+      });
+      arrowShaft.style.strokeDasharray  = shaftLen;
+      arrowShaft.style.strokeDashoffset = shaftLen;
+      jLetter.style.strokeDasharray     = jLen;
+      jLetter.style.strokeDashoffset    = jLen;
+
+      // Sweep glow: short visible dash that will travel around
+      const sweepSeg = 110;
+      [sweepGlow, sweepGlow2].forEach(el => {
+        el.style.strokeDasharray  = sweepSeg + ' ' + (circleLen - sweepSeg);
+        el.style.strokeDashoffset = circleLen; // start hidden (offset = full length)
+      });
+    }
+    resetStrokes();
+
+    // --- Master timeline ---
+    let masterTL = null;
+
+    function buildTimeline() {
+      const tl = gsap.timeline({
+        repeat: -1,
+        repeatDelay: 0.55,            // logo rests still ~0.55s before fade-out / restart
+        defaults: { ease: 'apple' }
+      });
+
+      // 0) Container fade-in (so loop restart is invisible -> visible)
+      tl.fromTo(stage, { opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1, duration: 0.45, ease: 'apple' }, 0);
+
+      // ============ SCENE 1 — Circular Path Drawing (0.0 – 0.8s) ============
+      tl.fromTo(circle,
+          { strokeDashoffset: circleLen, opacity: 0.4 },
+          { strokeDashoffset: 0,         opacity: 1, duration: 0.8, ease: 'apple' }, 0);
+
+      // Soft blur underlay that fades in & out while drawing
+      tl.fromTo(circleGlow,
+          { strokeDashoffset: circleLen, opacity: 0 },
+          { strokeDashoffset: 0,         opacity: 0.55, duration: 0.8, ease: 'apple' }, 0)
+        .to(circleGlow, { opacity: 0.18, duration: 0.35, ease: 'power2.out' }, 0.8);
+
+      // ============ SCENE 2 — Arrow Growth (0.8 – 1.4s) ============
+      // Arrow shaft trims forward
+      tl.to(arrowShaft,
+          { strokeDashoffset: 0, duration: 0.4, ease: 'apple' }, 0.8);
+
+      // Arrowhead pops out at end of shaft trim with a 2% overshoot
+      tl.fromTo(arrowHead,
+          { opacity: 0, scale: 0 },
+          { opacity: 1, scale: 1.18, duration: 0.18, ease: 'back.out(2.2)' }, 1.12)
+        .to(arrowHead, { scale: 0.97, duration: 0.08, ease: 'power2.out' }, 1.30)
+        .to(arrowHead, { scale: 1.0,  duration: 0.10, ease: 'power2.inOut' }, 1.38);
+
+      // ============ SCENE 3 — JP Letter Reveal (1.4 – 2.4s) ============
+      // J reveals bottom -> top (path was authored bottom-up so trim draws it that way)
+      tl.to(jLetter,
+          { strokeDashoffset: 0, duration: 0.55, ease: 'apple' }, 1.4);
+
+      // P reveals left -> right via clip rect width grow, 0.2s after J
+      tl.to(pClipRect,
+          { attr: { width: 100 }, duration: 0.6, ease: 'apple' }, 1.6);
+      tl.fromTo(pLetter,
+          { opacity: 0, scale: 0.96, transformOrigin: '200px 200px' },
+          { opacity: 1, scale: 1.0,  duration: 0.6, ease: 'apple' }, 1.6);
+
+      // ============ SCENE 4 — Left Progress Lines (2.4 – 3.0s) ============
+      // Top -> Middle -> Bottom, 0.08s stagger; slide X -15 -> 0 + opacity 0 -> 1
+      tl.fromTo(line1, { x: -15, opacity: 0 }, { x: 0, opacity: 1, duration: 0.28, ease: 'apple' }, 2.40)
+        .fromTo(line2, { x: -15, opacity: 0 }, { x: 0, opacity: 1, duration: 0.28, ease: 'apple' }, 2.48)
+        .fromTo(line3, { x: -15, opacity: 0 }, { x: 0, opacity: 1, duration: 0.28, ease: 'apple' }, 2.56);
+
+      // ============ SCENE 5 — Checkmark Bounce (3.0 – 3.5s) ============
+      // Apple Face ID style: 0 -> 120% -> 95% -> 100%
+      tl.fromTo(checkmark,
+          { opacity: 0, scale: 0 },
+          { opacity: 1, scale: 1.20, duration: 0.18, ease: 'back.out(2)' }, 3.0)
+        .to(checkmark, { scale: 0.95, duration: 0.10, ease: 'power2.out' }, 3.18)
+        .to(checkmark, { scale: 1.00, duration: 0.16, ease: 'elastic.out(1, 0.55)' }, 3.28);
+
+      // ============ SCENE 6 — Brand Text Fade In (3.5 – 4.2s) ============
+      // opacity 0 -> 100, Y 20 -> 0, letter-spacing 20 -> 0
+      tl.fromTo(brandText,
+          { opacity: 0, y: 20, attr: { 'letter-spacing': 20 } },
+          { opacity: 1, y: 0,  attr: { 'letter-spacing': 0 }, duration: 0.7, ease: 'apple' }, 3.5);
+
+      // ============ SCENE 7 — Premium Final Glow Sweep (4.2 – 4.5s) ============
+      // Soft light travels around the circle. Intensity 0 -> 35% -> 10%.
+      // The dash travels clockwise: animate strokeDashoffset from circleLen -> -circleLen
+      // (so the visible 110px segment sweeps fully around the ring once.)
+      tl.set([sweepGlow, sweepGlow2], { strokeDashoffset: circleLen }, 4.2)
+        .to(sweepGlow2, { opacity: 0.35, duration: 0.1,  ease: 'power2.out' }, 4.2)
+        .to(sweepGlow,  { opacity: 0.55, duration: 0.1,  ease: 'power2.out' }, 4.2)
+        .to([sweepGlow, sweepGlow2],
+            { strokeDashoffset: -circleLen, duration: 0.35, ease: 'power1.inOut' }, 4.2)
+        .to([sweepGlow, sweepGlow2],
+            { opacity: 0.10, duration: 0.18, ease: 'power2.inOut' }, 4.42)
+        .to([sweepGlow, sweepGlow2],
+            { opacity: 0, duration: 0.1, ease: 'power2.out' }, 4.55);
+
+      // ============ Hold + smooth loop fade-out (4.7 – 5.0s) ============
+      // The logo rests still until 4.7s, then fades out so the restart is invisible.
+      tl.to(stage, { opacity: 0, duration: 0.3, ease: 'power2.in' }, 4.75);
+
+      return tl;
+    }
+
+    function start() {
+      resetStrokes();
+      // Reset other animated props to their initial state too
+      gsap.set([arrowHead, checkmark, pLetter, brandText, line1, line2, line3, circleGlow, sweepGlow, sweepGlow2],
+               { clearProps: 'all' });
+      gsap.set(arrowHead,   { opacity: 0, scale: 0 });
+      gsap.set(checkmark,   { opacity: 0, scale: 0 });
+      gsap.set(pLetter,     { opacity: 0 });
+      gsap.set(brandText,   { opacity: 0, y: 20, attr: { 'letter-spacing': 20 } });
+      gsap.set([line1, line2, line3], { opacity: 0, x: -15 });
+      gsap.set(circleGlow,  { opacity: 0 });
+      gsap.set([sweepGlow, sweepGlow2], { opacity: 0 });
+      gsap.set(pClipRect,   { attr: { width: 0 } });
+
+      if (masterTL) masterTL.kill();
+      masterTL = buildTimeline();
+      // Expose for debugging / external control
+      window.masterTL = masterTL;
+    }
+
+    start();
+
+    // --- Replay button (manual restart) ---
+    replayBtn.addEventListener('click', function () {
+      start();
+    });
+
+    // --- Pause animation when tab is hidden (saves CPU, prevents jitter on resume) ---
+    document.addEventListener('visibilitychange', function () {
+      if (!masterTL) return;
+      if (document.hidden) masterTL.pause();
+      else                 masterTL.resume();
+    });
+
+    // Console hint
+    console.log('%cJuly Plan logo animation • running at 60 FPS', 'color:#7CF0C0;');
+  });
+})();
+</script>
+
+</body>
+</html>

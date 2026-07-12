@@ -78,10 +78,10 @@ export function AIChatView() {
     setBusy(true);
 
     try {
-      // ----- Step 1: Check for chat commands (memory/task) -----
+      // ----- Step 1: Check for chat commands (memory/task) — INSTANT, no AI call -----
       const cmd = parseCommand(message);
 
-      // Memory commands
+      // Memory commands — instant
       if (cmd.type !== 'none' && cmd.type !== 'task_action' && cmd.type !== 'help') {
         const result = executeMemoryCommand(cmd);
         if (result.message) {
@@ -91,7 +91,7 @@ export function AIChatView() {
         return;
       }
 
-      // Help command
+      // Help command — instant
       if (cmd.type === 'help') {
         const result = executeMemoryCommand(cmd);
         appendAIChat({ role: 'assistant', content: result.message });
@@ -100,73 +100,77 @@ export function AIChatView() {
         return;
       }
 
-      // Task commands (natural language CRUD)
+      // Task commands — try LOCAL parse first (instant, no AI round-trip)
       if (cmd.type === 'task_action') {
-        const action = await parseTaskAction(message, undefined, {
+        // Import locally for instant execution
+        const { tryLocalParse } = await import('@/lib/ai/task-manager');
+        const localAction = tryLocalParse(message);
+
+        if (localAction && localAction.action !== 'unknown') {
+          // Execute locally — INSTANT, no AI needed
+          const { executeTaskAction } = await import('@/lib/ai/task-manager');
+          const result = executeTaskAction(localAction);
+          if (result.message) {
+            appendAIChat({ role: 'assistant', content: result.message });
+          }
+          // Push to Supabase if authed
+          if (profile?.id && !isOffline && result.taskId) {
+            const { pushTask } = await import('@/lib/sync');
+            const task = useStore.getState().tasks.find((t) => t.id === result.taskId);
+            if (task) pushTask(profile.id, task);
+          }
+          setBusy(false);
+          return;
+        }
+        // If local parse fails, DON'T fall through to app-actions (it's slow)
+        // Instead, go straight to regular AI chat — the AI will handle it
+      }
+
+      // Universal app actions (habits, finance, sections) — LOCAL fast-path only
+      // Only check if the message starts with add/delete/show for non-task modules
+      const lowerMsg = message.toLowerCase();
+      if (/^(add|create|new|delete|remove|show|list)\s+(habit|expense|income|section|journal|note|knowledge)/i.test(lowerMsg)) {
+        const { parseAppAction, executeAppAction } = await import('@/lib/ai/app-actions');
+        const appCmd = await parseAppAction(message, undefined, {
           profile: {
             provider: settings.aiProvider ?? 'zai',
             model_chat: settings.aiModelChat ?? 'glm-4.6',
             model_planning: settings.aiModelPlanning ?? 'glm-4.6',
             model_reports: settings.aiModelReports ?? 'glm-4.6',
             fallback_model: 'glm-4.5',
-            temperature: settings.aiTemperature ?? 0.7,
-            max_tokens: settings.aiMaxTokens ?? 1500,
+            temperature: 0.1,
+            max_tokens: 300,
             prompt_style: 'coach',
             enabled_modules_json: settings.aiEnabledModules ?? [],
           },
           userId: profile?.id,
         });
-        if (action.action !== 'unknown') {
-          const result = executeTaskAction(action);
+
+        if (appCmd.module !== 'task') {
+          const result = executeAppAction(appCmd);
           if (result.message) {
             appendAIChat({ role: 'assistant', content: result.message });
+          }
+          if (result.needsConfirmation && result.executeAfterConfirm) {
+            setPendingConfirm({ message: result.confirmationMessage ?? 'Confirm?', execute: result.executeAfterConfirm });
           }
           setBusy(false);
           return;
         }
       }
 
-      // ----- Step 1b: Check for universal app actions (habits, finance, sections, etc.) -----
-      const { parseAppAction, executeAppAction } = await import('@/lib/ai/app-actions');
-      const appCmd = await parseAppAction(message, undefined, {
-        profile: {
-          provider: settings.aiProvider ?? 'zai',
-          model_chat: settings.aiModelChat ?? 'glm-4.6',
-          model_planning: settings.aiModelPlanning ?? 'glm-4.6',
-          model_reports: settings.aiModelReports ?? 'glm-4.6',
-          fallback_model: 'glm-4.5',
-          temperature: 0.1,
-          max_tokens: 500,
-          prompt_style: 'coach',
-          enabled_modules_json: settings.aiEnabledModules ?? [],
-        },
-        userId: profile?.id,
-      });
-
-      // If it's a non-task action (task is handled above), execute it
-      if (appCmd.module !== 'task' || appCmd.action !== 'show') {
-        const result = executeAppAction(appCmd);
-        if (result.message) {
-          appendAIChat({ role: 'assistant', content: result.message });
+      // Routine commands — instant
+      if (/^(edit|update|change|move)\s+(routine|block)/i.test(lowerMsg)) {
+        const { parseRoutineAction, executeRoutineAction } = await import('@/lib/ai/routine-manager');
+        const routineAction = parseRoutineAction(message);
+        if (routineAction && routineAction.action !== 'unknown') {
+          const result = executeRoutineAction(routineAction);
+          if (result.message) {
+            appendAIChat({ role: 'assistant', content: result.message });
+          }
+          setBusy(false);
+          return;
         }
-        // If needs confirmation, store the pending action for Yes/No response
-        if (result.needsConfirmation && result.executeAfterConfirm) {
-          setPendingConfirm({ message: result.confirmationMessage ?? 'Confirm?', execute: result.executeAfterConfirm });
-        }
-        setBusy(false);
-        return;
-      }
-
-      // ----- Step 1b: Routine commands (edit routine blocks via chat) -----
-      const { parseRoutineAction, executeRoutineAction } = await import('@/lib/ai/routine-manager');
-      const routineAction = parseRoutineAction(message);
-      if (routineAction && routineAction.action !== 'unknown') {
-        const result = executeRoutineAction(routineAction);
-        if (result.message) {
-          appendAIChat({ role: 'assistant', content: result.message });
-        }
-        setBusy(false);
-        return;
       }
 
       // ----- Step 2: Regular AI chat with memory retrieval -----
@@ -427,7 +431,7 @@ export function AIChatView() {
               }
             }}
             placeholder="Ask anything, or try: 'remember that...', 'add task tomorrow 7 AM', 'show memories'..."
-            disabled={busy}
+            disabled={false}
           />
           <Button onClick={() => handleSend(input)} disabled={busy || !input.trim()}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

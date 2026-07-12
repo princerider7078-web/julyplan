@@ -59,7 +59,7 @@ Do NOT include any text outside the JSON.`;
 
 // First try a fast local parse for common patterns.
 // Only fall back to AI if local parsing is ambiguous.
-function tryLocalParse(input: string): TaskAction | null {
+export function tryLocalParse(input: string): TaskAction | null {
   const text = input.toLowerCase().trim();
 
   // Add/Create patterns
