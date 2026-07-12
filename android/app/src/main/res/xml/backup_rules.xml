@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup rules — ensures ALL app data is preserved during APK updates.
+     This includes WebView localStorage (where Zustand stores all app data). -->
+<full-backup-content>
+    <!-- Include the entire app data directory -->
+    <include domain="root" path="."/>
+    <!-- Explicitly include WebView data (localStorage, IndexedDB) -->
+    <include domain="database" path="."/>
+    <include domain="file" path="."/>
+    <include domain="sharedpref" path="."/>
+    <!-- Include app webview data -->
+    <include domain="database" path="webview.db"/>
+    <include domain="database" path="webviewCookiesChromium.db"/>
+</full-backup-content>
