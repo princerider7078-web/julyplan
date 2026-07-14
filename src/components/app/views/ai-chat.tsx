@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
 import { aiChat, aiExtractMemories } from '@/lib/ai';
+import { tryLocalParse, parseWithAI, executeActions, type AppAction, type ActionEnvelope } from '@/lib/ai/action-router';
 import { buildLocalContext, retrieveRelevantMemories } from '@/lib/ai/context';
 import { parseCommand, executeMemoryCommand, detectCategory } from '@/lib/ai/commands';
 import { parseTaskAction, executeTaskAction } from '@/lib/ai/task-manager';
@@ -58,15 +59,15 @@ export function AIChatView() {
     // Check for pending confirmation (yes/no)
     if (pendingConfirm) {
       const lower = message.toLowerCase();
-      if (lower === 'yes' || lower === 'y' || lower === 'ok' || lower === 'haan' || lower === 'confirm') {
+      if (lower === 'yes' || lower === 'y' || lower === 'ok' || lower === 'haan' || lower === 'confirm' || lower === 'pakka' || lower === 'kar do') {
         pendingConfirm.execute();
         appendAIChat({ role: 'user', content: message });
-        appendAIChat({ role: 'assistant', content: '✅ Done. Deleted successfully.' });
+        appendAIChat({ role: 'assistant', content: '✅ Done successfully.' });
         setPendingConfirm(null);
         return;
       } else {
         appendAIChat({ role: 'user', content: message });
-        appendAIChat({ role: 'assistant', content: '❌ Cancelled. Nothing was deleted.' });
+        appendAIChat({ role: 'assistant', content: '❌ Cancelled.' });
         setPendingConfirm(null);
         return;
       }
@@ -78,114 +79,53 @@ export function AIChatView() {
     setBusy(true);
 
     try {
-      // ----- Step 1: Check for chat commands (memory/task) — INSTANT, no AI call -----
-      const cmd = parseCommand(message);
-
-      // Memory commands — instant
-      if (cmd.type !== 'none' && cmd.type !== 'task_action' && cmd.type !== 'help') {
-        const result = executeMemoryCommand(cmd);
-        if (result.message) {
-          appendAIChat({ role: 'assistant', content: result.message });
-        }
-        setBusy(false);
-        return;
-      }
-
-      // Help command — instant
-      if (cmd.type === 'help') {
-        const result = executeMemoryCommand(cmd);
-        appendAIChat({ role: 'assistant', content: result.message });
-        setShowHelp(true);
-        setBusy(false);
-        return;
-      }
-
-      // Task commands — try LOCAL parse first (instant, no AI round-trip)
-      if (cmd.type === 'task_action') {
-        // Import locally for instant execution
-        const { tryLocalParse } = await import('@/lib/ai/task-manager');
-        const localAction = tryLocalParse(message);
-
-        if (localAction && localAction.action !== 'unknown') {
-          // Execute locally — INSTANT, no AI needed
-          const { executeTaskAction } = await import('@/lib/ai/task-manager');
-          const result = executeTaskAction(localAction);
-          if (result.message) {
-            appendAIChat({ role: 'assistant', content: result.message });
-          }
-          // Push to Supabase if authed
-          if (profile?.id && !isOffline && result.taskId) {
-            const { pushTask } = await import('@/lib/sync');
-            const task = useStore.getState().tasks.find((t) => t.id === result.taskId);
-            if (task) pushTask(profile.id, task);
-          }
-          setBusy(false);
-          return;
-        }
-        // If local parse fails, DON'T fall through to app-actions (it's slow)
-        // Instead, go straight to regular AI chat — the AI will handle it
-      }
-
-      // Universal app actions (habits, finance, sections) — LOCAL fast-path only
-      // Only check if the message starts with add/delete/show for non-task modules
-      const lowerMsg = message.toLowerCase();
-      if (/^(add|create|new|delete|remove|show|list)\s+(habit|expense|income|section|journal|note|knowledge)/i.test(lowerMsg)) {
-        const { parseAppAction, executeAppAction } = await import('@/lib/ai/app-actions');
-        const appCmd = await parseAppAction(message, undefined, {
-          profile: {
-            provider: settings.aiProvider ?? 'zai',
-            model_chat: settings.aiModelChat ?? 'glm-4.6',
-            model_planning: settings.aiModelPlanning ?? 'glm-4.6',
-            model_reports: settings.aiModelReports ?? 'glm-4.6',
-            fallback_model: 'glm-4.5',
-            temperature: 0.1,
-            max_tokens: 300,
-            prompt_style: 'coach',
-            enabled_modules_json: settings.aiEnabledModules ?? [],
-          },
-          userId: profile?.id,
-        });
-
-        if (appCmd.module !== 'task') {
-          const result = executeAppAction(appCmd);
-          if (result.message) {
-            appendAIChat({ role: 'assistant', content: result.message });
-          }
-          if (result.needsConfirmation && result.executeAfterConfirm) {
-            setPendingConfirm({ message: result.confirmationMessage ?? 'Confirm?', execute: result.executeAfterConfirm });
-          }
-          setBusy(false);
-          return;
-        }
-      }
-
-      // Routine commands — instant
-      if (/^(edit|update|change|move)\s+(routine|block)/i.test(lowerMsg)) {
-        const { parseRoutineAction, executeRoutineAction } = await import('@/lib/ai/routine-manager');
-        const routineAction = parseRoutineAction(message);
-        if (routineAction && routineAction.action !== 'unknown') {
-          const result = executeRoutineAction(routineAction);
-          if (result.message) {
-            appendAIChat({ role: 'assistant', content: result.message });
-          }
-          setBusy(false);
-          return;
-        }
-      }
-
-      // ----- Step 2: Regular AI chat with memory retrieval -----
       const today = todayISO();
+
+      // ─── STEP 1: Try local fast-path parse (INSTANT, no AI) ───
+      const localResult = tryLocalParse(message);
+
+      if (localResult) {
+        if (localResult.actions.length > 0 && !localResult.needs_confirmation) {
+          const { results, navigateTo } = executeActions(localResult.actions);
+          const replyText = localResult.reply || results.map(r => r.message).join('\n');
+          appendAIChat({ role: 'assistant', content: replyText });
+
+          if (profile?.id && !isOffline) {
+            for (const result of results) {
+              if (result.taskId) {
+                const { pushTask } = await import('@/lib/sync');
+                const task = useStore.getState().tasks.find((t) => t.id === result.taskId);
+                if (task) pushTask(profile.id, task);
+              }
+            }
+          }
+          if (navigateTo) setTimeout(() => onNavigate(navigateTo as ViewKey), 500);
+        } else if (localResult.needs_confirmation) {
+          appendAIChat({ role: 'assistant', content: localResult.reply || localResult.confirmation_question || 'Confirm?' });
+          setPendingConfirm({
+            message: localResult.confirmation_question || 'Confirm?',
+            execute: () => {
+              const { results } = executeActions(localResult.actions);
+              appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') });
+            },
+          });
+        } else if (localResult.reply) {
+          appendAIChat({ role: 'assistant', content: localResult.reply });
+        } else {
+          const { results, navigateTo } = executeActions(localResult.actions);
+          appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') || localResult.reply });
+          if (navigateTo) setTimeout(() => onNavigate(navigateTo as ViewKey), 500);
+        }
+        setBusy(false);
+        return;
+      }
+
+      // ─── STEP 2: AI fallback (when local parse doesn't match) ───
       const ctx = buildLocalContext({
-        todayTasks: tasks
-          .filter((t) => t.status !== 'archived')
-          .slice(0, 10)
-          .map((t) => ({
-            title: t.title,
-            priority: t.priority,
-            time: t.time,
-            done: !!t.completionLog?.[today],
-          })),
-        recentHabits: habits.slice(0, 10).map((h) => {
+        todayTasks: tasks.filter((t) => t.status !== 'archived').slice(0, 5).map((t) => ({
+          title: t.title, priority: t.priority, time: t.time, done: !!t.completionLog?.[today],
+        })),
+        recentHabits: habits.slice(0, 8).map((h) => {
           let streak = 0;
           const d = new Date();
           while (true) {
@@ -199,15 +139,12 @@ export function AIChatView() {
           monthSpend: finance.filter((f) => f.type === 'expense' && f.date.slice(0, 7) === today.slice(0, 7)).reduce((s, f) => s + f.amount, 0),
           budget: 5000,
         },
-        // V3: semantic memory retrieval — only inject relevant memories
         userQuery: message,
       });
 
-      const history = chatHistory
-        .slice(-6)
-        .map((m) => ({ role: m.role, content: m.content }));
+      const history = chatHistory.slice(-6).map((m) => ({ role: m.role, content: m.content }));
 
-      const response = await aiChat(message, ctx, history, {
+      const envelope = await parseWithAI(message, ctx, history, {
         profile: {
           provider: settings.aiProvider ?? 'zai',
           model_chat: settings.aiModelChat ?? 'glm-4.6',
@@ -222,11 +159,37 @@ export function AIChatView() {
         userId: profile?.id,
       });
 
-      appendAIChat({ role: 'assistant', content: response.text });
+      if (envelope.actions.length > 0 && !envelope.needs_confirmation) {
+        const { results, navigateTo } = executeActions(envelope.actions);
+        const replyText = envelope.reply || results.map(r => r.message).join('\n');
+        appendAIChat({ role: 'assistant', content: replyText });
+        if (navigateTo) setTimeout(() => onNavigate(navigateTo as ViewKey), 500);
 
-      // ----- Step 3: Auto-extract durable memories from the exchange -----
+        if (profile?.id && !isOffline) {
+          for (const result of results) {
+            if (result.taskId) {
+              const { pushTask } = await import('@/lib/sync');
+              const task = useStore.getState().tasks.find((t) => t.id === result.taskId);
+              if (task) pushTask(profile.id, task);
+            }
+          }
+        }
+      } else if (envelope.needs_confirmation) {
+        appendAIChat({ role: 'assistant', content: envelope.reply || envelope.confirmation_question || 'Confirm?' });
+        setPendingConfirm({
+          message: envelope.confirmation_question ?? 'Confirm?',
+          execute: () => {
+            const { results } = executeActions(envelope.actions);
+            appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') || 'Done.' });
+          },
+        });
+      } else {
+        appendAIChat({ role: 'assistant', content: envelope.reply });
+      }
+
+      // ─── Auto-extract memories ───
       try {
-        const conv = `User: ${message}\n\nAssistant: ${response.text}`;
+        const conv = `User: ${message}\n\nAssistant: ${envelope.reply}`;
         const extraction = await aiExtractMemories(conv, {
           profile: {
             provider: settings.aiProvider ?? 'zai',
@@ -234,8 +197,8 @@ export function AIChatView() {
             model_planning: settings.aiModelPlanning ?? 'glm-4.6',
             model_reports: settings.aiModelReports ?? 'glm-4.6',
             fallback_model: 'glm-4.5',
-            temperature: 0.1, // deterministic for extraction
-            max_tokens: 800,
+            temperature: 0.1,
+            max_tokens: 600,
             prompt_style: 'coach',
             enabled_modules_json: settings.aiEnabledModules ?? [],
           },
@@ -243,34 +206,26 @@ export function AIChatView() {
         });
 
         if (Array.isArray(extraction.json)) {
-          const extracted = extraction.json as Array<{
-            memory_type?: string;
-            memory_key?: string;
-            memory_value?: string;
-            confidence_score?: number;
-          }>;
-          for (const m of extracted) {
+          for (const m of extraction.json as Array<Record<string, string | number | undefined>>) {
             if (m.memory_type && m.memory_key && m.memory_value) {
-              // Avoid duplicates — check if similar memory exists
               const existing = memories.find(
-                (existing) =>
-                  existing.title.toLowerCase() === m.memory_key!.toLowerCase() ||
-                  existing.content.toLowerCase() === m.memory_value!.toLowerCase(),
+                (e) => e.title.toLowerCase() === (m.memory_key as string).toLowerCase() ||
+                       e.content.toLowerCase() === (m.memory_value as string).toLowerCase(),
               );
               if (!existing) {
-                addMemory({
-                  title: m.memory_key,
-                  content: m.memory_value,
-                  category: (m.memory_type as ReturnType<typeof detectCategory>) ?? 'custom',
+                useStore.getState().addMemory({
+                  title: m.memory_key as string,
+                  content: m.memory_value as string,
+                  category: (m.memory_type as string) ?? 'custom',
                   importance: 'medium',
-                  confidence: m.confidence_score ?? 0.6,
+                  confidence: (m.confidence_score as number) ?? 0.6,
                   source: 'chat',
                 });
               }
             }
           }
         }
-      } catch { /* silent — memory extraction is best-effort */ }
+      } catch { /* silent */ }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'AI request failed');
     } finally {
