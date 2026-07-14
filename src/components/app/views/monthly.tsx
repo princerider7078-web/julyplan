@@ -44,7 +44,7 @@ export function MonthlyView({ onNavigate }: Props) {
     return arr;
   }, [habits, todayDate]);
 
-  // Wasted days
+  // Missed days
   const wastedDays = monthData.filter((d) => !d.isFuture && !d.isToday && d.pct < 30).length;
   const perfectDays = monthData.filter((d) => !d.isFuture && !d.isToday && d.pct >= 80).length;
   const wastedDanger = wastedDays >= settings.maxWastedDays;
@@ -75,7 +75,7 @@ export function MonthlyView({ onNavigate }: Props) {
           July Plan · Month of Execution
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Build discipline · Improve health · Execute daily · Max {settings.maxWastedDays} wasted days
+          Build discipline · Improve health · Execute daily · Max {settings.maxWastedDays} missed days
         </p>
       </div>
 
@@ -100,7 +100,7 @@ export function MonthlyView({ onNavigate }: Props) {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground mb-1">Wasted Days</div>
+            <div className="text-xs text-muted-foreground mb-1">Missed Days</div>
             <div className={cn(
               'text-2xl font-bold flex items-center gap-2',
               wastedDanger ? 'text-red-500' : 'text-amber-500',
@@ -143,7 +143,7 @@ export function MonthlyView({ onNavigate }: Props) {
           <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
           <div>
             <div className="font-semibold text-red-700 dark:text-red-300">
-              Monthly warning — wasted-day limit reached
+              Monthly warning — missed-day limit reached
             </div>
             <p className="text-sm text-red-700/80 dark:text-red-300/80 mt-1">
               You&apos;ve hit the {settings.maxWastedDays}-day limit. Execute every remaining day with full focus to recover the month.

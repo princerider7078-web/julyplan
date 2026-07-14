@@ -148,7 +148,7 @@ export function SettingsView() {
               <CalendarX className="h-4 w-4 text-amber-500" />
             </div>
             <div className="flex-1">
-              <Label htmlFor="wasted-target" className="text-sm">Max wasted days / month</Label>
+              <Label htmlFor="wasted-target" className="text-sm">Max missed days / month</Label>
               <p className="text-xs text-muted-foreground">App warns when limit is reached</p>
             </div>
             <Input

@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { ExplainThis } from '@/components/app/explain-this';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -211,6 +212,9 @@ export function MemoryManagerView() {
           <p className="text-sm text-muted-foreground mt-1">
             {totalActive} active · {totalPinned} pinned · {totalArchived} archived
           </p>
+          <div className="mt-2">
+            <ExplainThis topic="AI Memory — what it stores and how the AI uses it" context="Explain: memories are facts the AI remembers across conversations. Pinned = always included. Locked = can't be auto-deleted. Archived = hidden from AI. Disabled = temporarily excluded." />
+          </div>
         </div>
         <div className="flex gap-2">
           <Button

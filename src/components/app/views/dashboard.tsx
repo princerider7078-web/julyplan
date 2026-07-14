@@ -93,7 +93,7 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
   }
   const bestStreak = Math.max(0, ...habits.map((h) => getStreak(h.log)));
 
-  // Wasted days this month
+  // Missed days this month
   function getMonthWasted() {
     const day = new Date().getDate();
     let wasted = 0;
@@ -140,7 +140,7 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
     const d2 = workoutHabit.log[new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10)];
     if (d1 === false && d2 === false) warnings.push('Workout missed 2 days in a row — highlighted in red.');
   }
-  if (wastedDanger) warnings.push(`Wasted-day limit (${settings.maxWastedDays}) reached — execute today with full focus.`);
+  if (wastedDanger) warnings.push(`Missed-day limit (${settings.maxWastedDays}) reached — execute today with full focus.`);
 
   const weekTheme = weeklyThemes.find((w) => w.week === currentWeek);
 

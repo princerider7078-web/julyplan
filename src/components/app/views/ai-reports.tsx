@@ -34,7 +34,7 @@ export function AIReportsView() {
       const last7 = getLast7Days();
       const last30 = getLast30Days();
 
-      // Habit compliance over period
+      // Habit consistency over period
       const period = type === 'daily' ? [today] : type === 'weekly' ? last7 : last30;
       const habitCompliance = habits.length
         ? Math.round(

@@ -122,7 +122,7 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   }
   const bestStreak = Math.max(0, ...habits.map((h) => getStreak(h.log)));
 
-  // Wasted days this month — count days where <30% of habits done
+  // Missed days this month — count days where <30% of habits done
   function getMonthWasted() {
     const day = new Date().getDate();
     let wasted = 0;
@@ -292,7 +292,7 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
           <Progress value={(new Date().getDate() / 31) * 100} className="h-1.5" />
           {wasted >= settings.maxWastedDays && (
             <Badge variant="destructive" className="w-full justify-center text-[10px]">
-              Wasted-day limit reached — recover today
+              Missed-day limit reached — recover today
             </Badge>
           )}
           {profile && (

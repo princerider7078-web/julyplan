@@ -249,7 +249,7 @@ export default function Home() {
           {view === 'monthly' && <MonthlyView onNavigate={setView} />}
           {view === 'reports' && <ReportsView />}
           {view === 'settings' && <SettingsView />}
-          {view === 'ai-chat' && <AIChatView />}
+          {view === 'ai-chat' && <AIChatView onNavigate={setView} />}
           {view === 'ai-planner' && <AIPlannerView />}
           {view === 'ai-reports' && <AIReportsView />}
           {view === 'journal' && <JournalView />}

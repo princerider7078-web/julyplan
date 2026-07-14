@@ -100,14 +100,14 @@ export function ReportsView() {
   const totalRoutineDone7 = weeklyData.reduce((s, d) => s + d.routineDone, 0);
   const totalWorkouts7 = weeklyData.reduce((s, d) => s + d.workoutDone, 0);
   const totalVoice7 = weeklyData.reduce((s, d) => s + d.voiceDone, 0);
-  const waterCompliance7 = (() => {
+  const waterConsistency7 = (() => {
     // % of last 7 days where "3L+ water" habit was done
     const waterHabit = habits.find((h) => h.name.toLowerCase().includes('water'));
     if (!waterHabit) return 0;
     const done = last7.filter((d) => waterHabit.log[d]).length;
     return Math.round((done / 7) * 100);
   })();
-  const sleepCompliance7 = (() => {
+  const sleepConsistency7 = (() => {
     const sleepHabit = habits.find((h) => h.name.toLowerCase().includes('sleep'));
     if (!sleepHabit) return 0;
     const done = last7.filter((d) => sleepHabit.log[d]).length;
@@ -128,7 +128,7 @@ export function ReportsView() {
     ? Math.round(past30.reduce((s, d) => s + d.habitPct, 0) / past30.length)
     : 0;
 
-  // Wasted days
+  // Missed days
   const wastedDays = past30.filter((d) => d.habitPct < 30).length;
 
   return (
@@ -164,19 +164,19 @@ export function ReportsView() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <TrendingUp className="h-3.5 w-3.5" /> Water Compliance
+              <TrendingUp className="h-3.5 w-3.5" /> Water Consistency
             </div>
-            <div className="text-2xl font-bold text-cyan-500">{waterCompliance7}%</div>
-            <Progress value={waterCompliance7} className="h-1.5 mt-2" />
+            <div className="text-2xl font-bold text-cyan-500">{waterConsistency7}%</div>
+            <Progress value={waterConsistency7} className="h-1.5 mt-2" />
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <Moon className="h-3.5 w-3.5" /> Sleep Compliance
+              <Moon className="h-3.5 w-3.5" /> Sleep Consistency
             </div>
-            <div className="text-2xl font-bold text-violet-500">{sleepCompliance7}%</div>
-            <Progress value={sleepCompliance7} className="h-1.5 mt-2" />
+            <div className="text-2xl font-bold text-violet-500">{sleepConsistency7}%</div>
+            <Progress value={sleepConsistency7} className="h-1.5 mt-2" />
           </CardContent>
         </Card>
       </div>
@@ -321,7 +321,7 @@ export function ReportsView() {
                 <div className="text-lg font-bold">{totalRoutineDone7}</div>
               </div>
               <div className="p-2 rounded-md bg-muted/50">
-                <div className="text-xs text-muted-foreground">Wasted Days (30d)</div>
+                <div className="text-xs text-muted-foreground">Missed Days (30d)</div>
                 <div className="text-lg font-bold text-red-500">{wastedDays}</div>
               </div>
               <div className="p-2 rounded-md bg-muted/50">

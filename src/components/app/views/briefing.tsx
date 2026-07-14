@@ -104,7 +104,7 @@ Keep it under 200 words. Use their actual data. Light Hinglish OK.`,
 
 **Missed:** [list from data]
 
-**Habit compliance:** [X%]
+**Habit consistency:** [X%]
 
 **One suggestion for tomorrow:** [specific, actionable]
 

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { ExplainThis } from '@/components/app/explain-this';
 import { refreshLearningProfile } from '@/lib/ai/learning-engine';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -58,6 +59,9 @@ export function NotificationPreferencesView() {
         <p className="text-sm text-muted-foreground mt-1">
           The AI adapts to your behavior — tone, timing, and frequency tune themselves over time.
         </p>
+        <div className="mt-2">
+          <ExplainThis topic="Smart Notifications — Quiet Hours, Batching, Escalation" context="Explain: Quiet Hours = no notifications during sleep time. Smart Batching = groups multiple notifications into one. Escalation = if you ignore a notification, it gets stronger over 4 levels. AI Learning Profile = the app tracks when you respond best." />
+        </div>
       </div>
 
       {/* Native notification status */}

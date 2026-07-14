@@ -4,6 +4,7 @@ import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
 import { aiChat, aiExtractMemories } from '@/lib/ai';
 import { tryLocalParse, parseWithAI, executeActions, type AppAction, type ActionEnvelope } from '@/lib/ai/action-router';
+import type { ViewKey } from '@/components/app/sidebar';
 import { buildLocalContext, retrieveRelevantMemories } from '@/lib/ai/context';
 import { parseCommand, executeMemoryCommand, detectCategory } from '@/lib/ai/commands';
 import { parseTaskAction, executeTaskAction } from '@/lib/ai/task-manager';
@@ -25,7 +26,7 @@ const SUGGESTIONS = [
   'Generate my evening plan',
 ];
 
-export function AIChatView() {
+export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }) {
   const settings = useStore((s) => s.settings);
   const tasks = useStore((s) => s.tasks);
   const habits = useStore((s) => s.habits);
@@ -100,7 +101,7 @@ export function AIChatView() {
               }
             }
           }
-          if (navigateTo) setTimeout(() => onNavigate(navigateTo as ViewKey), 500);
+          if (navigateTo) setTimeout(() => onNavigate?.(navigateTo as ViewKey), 500);
         } else if (localResult.needs_confirmation) {
           appendAIChat({ role: 'assistant', content: localResult.reply || localResult.confirmation_question || 'Confirm?' });
           setPendingConfirm({
@@ -123,7 +124,7 @@ export function AIChatView() {
         } else {
           const { results, navigateTo } = executeActions(localResult.actions);
           appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') || localResult.reply });
-          if (navigateTo) setTimeout(() => onNavigate(navigateTo as ViewKey), 500);
+          if (navigateTo) setTimeout(() => onNavigate?.(navigateTo as ViewKey), 500);
         }
         setBusy(false);
         return;
@@ -172,7 +173,7 @@ export function AIChatView() {
         const { results, navigateTo } = executeActions(envelope.actions);
         const replyText = envelope.reply || results.map(r => r.message).join('\n');
         appendAIChat({ role: 'assistant', content: replyText });
-        if (navigateTo) setTimeout(() => onNavigate(navigateTo as ViewKey), 500);
+        if (navigateTo) setTimeout(() => onNavigate?.(navigateTo as ViewKey), 500);
 
         if (profile?.id && !isOffline) {
           for (const result of results) {

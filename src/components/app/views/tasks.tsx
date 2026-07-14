@@ -25,7 +25,7 @@ import {
 import type { Task } from '@/lib/types';
 import {
   Plus, Search, MoreVertical, Pencil, Trash2, Copy, Archive,
-  MoveRight, CheckCircle2, Circle, Filter, FolderInput,
+  MoveRight, CheckCircle2, Circle, Filter, FolderInput, FolderTree,
 } from 'lucide-react';
 
 export function TasksView() {
@@ -151,7 +151,20 @@ export function TasksView() {
       {filtered.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
-            <p className="text-sm text-muted-foreground">No tasks match the current filters.</p>
+            <FolderTree className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+            <h3 className="text-lg font-semibold">
+              {tasks.length === 0 ? 'No tasks yet' : 'No tasks match your filters'}
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+              {tasks.length === 0
+                ? 'Tasks are things you need to do — workouts, study sessions, errands. Add your first one to get started.'
+                : 'Try changing your search or filters above. Or clear them to see all tasks.'}
+            </p>
+            {tasks.length === 0 && (
+              <p className="text-xs text-muted-foreground/70 mt-2 italic">
+                Try: "add gym tomorrow 7 AM" in AI Assistant
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -233,9 +246,6 @@ export function TasksView() {
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => duplicateTask(t.id)}>
                           <Copy className="h-3.5 w-3.5 mr-2" /> Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => moveTask(t.id, t.sectionId)}>
-                          <MoveRight className="h-3.5 w-3.5 mr-2" /> Move…
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setMoveTarget(t)}>
                           <FolderInput className="h-3.5 w-3.5 mr-2" /> Move to section…
