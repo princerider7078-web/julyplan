@@ -11,16 +11,17 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: true,
-    backgroundColor: '#1a1410',
+    backgroundColor: '#000000',
     // Required for fetch() to external domains (Vercel) from WebView
     webContentsDebuggingEnabled: true,
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 800,
-      backgroundColor: '#f97316',
+      launchShowDuration: 600,
+      backgroundColor: '#000000',
       androidSplashResourceName: 'splash',
       showSpinner: false,
+      autoHide: true,
     },
   },
 };
