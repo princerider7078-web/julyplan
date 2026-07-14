@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
@@ -8,10 +8,13 @@ import { tryLocalParse, parseWithAI, executeActions } from '@/lib/ai/action-rout
 import type { ViewKey } from '@/components/app/sidebar';
 import { buildLocalContext } from '@/lib/ai/context';
 import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Brain, Trash2, User,
   ArrowUp, Lightbulb, Zap, Calendar,
   CheckCircle2, Clock, AlertCircle, ChevronRight,
+  Plus, History, MessageSquare, Pin, PinOff, Pencil, Search, MoreVertical,
 } from 'lucide-react';
 import { todayISO, cn } from '@/lib/utils';
 
@@ -94,10 +97,27 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
   const tasks = useStore((s) => s.tasks);
   const habits = useStore((s) => s.habits);
   const finance = useStore((s) => s.finance);
-  const chatHistory = useStore((s) => s.aiChatHistory);
+  const allChatHistory = useStore((s) => s.aiChatHistory);
+  const chatSessions = useStore((s) => s.chatSessions);
+  const activeChatSessionId = useStore((s) => s.activeChatSessionId);
   const appendAIChat = useStore((s) => s.appendAIChat);
   const clearAIChat = useStore((s) => s.clearAIChat);
+  const startNewChat = useStore((s) => s.startNewChat);
+  const switchChat = useStore((s) => s.switchChat);
+  const deleteChatSession = useStore((s) => s.deleteChatSession);
+  const renameChatSession = useStore((s) => s.renameChatSession);
+  const pinChatSession = useStore((s) => s.pinChatSession);
   const memories = useStore((s) => s.memories);
+
+  // V7: filter messages by active session
+  const chatHistory = useMemo(
+    () => activeChatSessionId ? allChatHistory.filter((m) => m.session_id === activeChatSessionId) : [],
+    [allChatHistory, activeChatSessionId],
+  );
+  const activeSession = useMemo(
+    () => chatSessions.find((s) => s.id === activeChatSessionId) ?? null,
+    [chatSessions, activeChatSessionId],
+  );
 
   const { profile, isOffline } = useAuth();
   const [input, setInput] = useState('');
@@ -106,6 +126,11 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ message: string; execute: () => void } | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [historySearch, setHistorySearch] = useState('');
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -332,10 +357,87 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
     setError(null);
   }
 
+  function handleNewChat() {
+    startNewChat();
+    setShowSuggestions(true);
+    setError(null);
+    setHistoryOpen(false);
+  }
+
+  function handleSwitchChat(sessionId: string) {
+    switchChat(sessionId);
+    setHistoryOpen(false);
+    setError(null);
+    setShowSuggestions(false);
+  }
+
+  function handleOpenRename(sessionId: string, currentTitle: string) {
+    setRenameOpen(sessionId);
+    setRenameValue(currentTitle);
+  }
+
+  function handleConfirmRename() {
+    if (renameOpen) {
+      renameChatSession(renameOpen, renameValue);
+    }
+    setRenameOpen(null);
+    setRenameValue('');
+  }
+
+  function handleConfirmDelete() {
+    if (deleteTarget) {
+      deleteChatSession(deleteTarget);
+    }
+    setDeleteTarget(null);
+  }
+
+  // Sorted sessions: pinned first, then by updated_at desc
+  const sortedSessions = useMemo(() => {
+    const filtered = historySearch
+      ? chatSessions.filter((s) => s.title.toLowerCase().includes(historySearch.toLowerCase()))
+      : chatSessions;
+    return [...filtered].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+  }, [chatSessions, historySearch]);
+
   const activeMemories = memories.filter((m) => !m.archived && !m.disabled).length;
 
   return (
     <div className="flex flex-col h-full relative">
+      {/* ═══ Top toolbar — New chat + History ═══ */}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border bg-card/50">
+        <button
+          onClick={handleNewChat}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors state-layer"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+          New chat
+        </button>
+        <button
+          onClick={() => setHistoryOpen(true)}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-accent transition-colors state-layer"
+        >
+          <History className="h-3.5 w-3.5" />
+          History
+          {chatSessions.length > 0 && (
+            <span className="ml-0.5 h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
+              {chatSessions.length}
+            </span>
+          )}
+        </button>
+        {/* Active session title (if exists and has messages) */}
+        {activeSession && activeSession.message_count > 0 && (
+          <div className="flex-1 min-w-0 text-right">
+            <span className="text-[11px] text-muted-foreground truncate block">
+              {activeSession.title}
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* ═══ Chat messages area ═══ */}
       <div
         ref={scrollRef}
@@ -566,11 +668,215 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
               className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-3 py-1"
             >
               <Trash2 className="h-3 w-3" />
-              Clear conversation
+              Clear all chats
             </button>
           </div>
         )}
       </div>
+
+      {/* ═══ Chat History Sheet — list all past sessions ═══ */}
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+        <SheetContent
+          side="bottom"
+          className="mx-auto max-w-[480px] rounded-t-3xl p-0 h-[80dvh] flex flex-col"
+        >
+          {/* Drag handle */}
+          <div className="flex justify-center pt-3 pb-1">
+            <div className="h-1.5 w-10 rounded-full bg-muted-foreground/30" />
+          </div>
+
+          <SheetHeader className="px-5 pt-2 pb-2 text-left">
+            <SheetTitle className="text-lg font-bold flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" />
+              Chat History
+            </SheetTitle>
+            <SheetDescription className="text-xs">
+              {chatSessions.length} conversation{chatSessions.length !== 1 ? 's' : ''} · tap to open
+            </SheetDescription>
+          </SheetHeader>
+
+          {/* Search bar */}
+          {chatSessions.length > 3 && (
+            <div className="px-5 pb-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Search chats…"
+                  className="h-9 pl-9 pr-3 text-xs rounded-xl bg-muted border-0"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Sessions list */}
+          <div className="flex-1 overflow-y-auto scroll-thin px-3 pb-6">
+            {sortedSessions.length === 0 ? (
+              <div className="text-center py-12 px-4">
+                <div className="inline-flex h-12 w-12 rounded-2xl bg-muted items-center justify-center mb-3">
+                  <MessageSquare className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="text-sm font-medium">No conversations yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Start a new chat to see it here</p>
+                <button
+                  onClick={handleNewChat}
+                  className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-xs font-semibold gradient-primary-strong text-white"
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  Start new chat
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {sortedSessions.map((sess) => {
+                  const isActive = sess.id === activeChatSessionId;
+                  const lastMsg = allChatHistory.filter((m) => m.session_id === sess.id).slice(-1)[0];
+                  return (
+                    <motion.div
+                      key={sess.id}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={cn(
+                        'group rounded-2xl border p-3 transition-all cursor-pointer',
+                        isActive
+                          ? 'border-primary/40 bg-primary/5'
+                          : 'border-border bg-card hover:border-primary/20 hover:bg-accent/30',
+                      )}
+                      onClick={() => handleSwitchChat(sess.id)}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <span className={cn(
+                          'h-9 w-9 rounded-xl flex items-center justify-center shrink-0',
+                          isActive ? 'gradient-primary-strong text-white' : 'bg-muted text-muted-foreground',
+                        )}>
+                          <MessageSquare className="h-4 w-4" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            {sess.pinned && <Pin className="h-3 w-3 text-primary shrink-0" />}
+                            <span className={cn(
+                              'text-sm truncate',
+                              isActive ? 'font-bold text-primary' : 'font-semibold',
+                            )}>
+                              {sess.title}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                            {lastMsg ? lastMsg.content.slice(0, 60) : 'No messages yet'}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground/70">
+                            <span className="flex items-center gap-0.5">
+                              <Clock className="h-2.5 w-2.5" />
+                              {new Date(sess.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            </span>
+                            <span>·</span>
+                            <span>{sess.message_count} msg{sess.message_count !== 1 ? 's' : ''}</span>
+                          </div>
+                        </div>
+                        {/* Action buttons — visible on hover/active */}
+                        <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); pinChatSession(sess.id, !sess.pinned); }}
+                            className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-primary"
+                            aria-label={sess.pinned ? 'Unpin' : 'Pin'}
+                          >
+                            {sess.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenRename(sess.id, sess.title); }}
+                            className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-primary"
+                            aria-label="Rename"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(sess.id); }}
+                            className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Footer — New chat button */}
+          <div className="shrink-0 px-5 py-3 border-t border-border">
+            <button
+              onClick={handleNewChat}
+              className="w-full h-11 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold gradient-primary-strong text-white shadow-md"
+            >
+              <Plus className="h-4 w-4" strokeWidth={2.5} />
+              Start new chat
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* ═══ Rename dialog ═══ */}
+      <AlertDialog open={renameOpen !== null} onOpenChange={(o) => !o && setRenameOpen(null)}>
+        <AlertDialogContent className="max-w-[400px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-primary" />
+              Rename chat
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Give this conversation a memorable name.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmRename(); }}
+            placeholder="Chat name…"
+            className="mt-2"
+            autoFocus
+          />
+          <AlertDialogFooter className="flex-row gap-2">
+            <AlertDialogCancel className="mt-0 flex-1">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="flex-1"
+              onClick={handleConfirmRename}
+            >
+              Save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ═══ Delete confirmation dialog ═══ */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent className="max-w-[400px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <span className="h-8 w-8 rounded-full bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
+                <Trash2 className="h-4 w-4" />
+              </span>
+              Delete this chat?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the conversation and all its messages. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row gap-2">
+            <AlertDialogCancel className="mt-0 flex-1">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 flex-1"
+              onClick={handleConfirmDelete}
+            >
+              <Trash2 className="h-4 w-4 mr-1.5" />
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

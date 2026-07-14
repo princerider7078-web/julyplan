@@ -136,6 +136,16 @@ export interface AIChatMessageStore {
   session_id?: string;
 }
 
+// V7: Multi-chat session support
+export interface ChatSession {
+  id: string;
+  title: string;           // auto-generated from first user message, user can rename
+  created_at: string;      // ISO timestamp
+  updated_at: string;      // ISO timestamp — bumped on every new message
+  message_count: number;   // denormalized for fast list rendering
+  pinned?: boolean;        // user can pin important chats to top
+}
+
 // ---------- Long-term AI Memory (V3) ----------
 export type MemoryCategory =
   | 'personal'      // Personal Information
@@ -237,6 +247,9 @@ export interface AppState {
   journal: JournalEntry[];
   knowledgeNotes: KnowledgeNote[];
   aiChatHistory: AIChatMessageStore[];
+  // V7: multi-chat sessions
+  chatSessions: ChatSession[];
+  activeChatSessionId: string | null;
   // V3: long-term memory + conversation summaries + AI-generated notifications
   memories: AIMemoryItem[];
   conversationSummaries: ConversationSummary[];

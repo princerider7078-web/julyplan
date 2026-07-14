@@ -284,3 +284,65 @@ Stage Summary:
 - Dynamic status messages replace generic spinner: "Thinking…" → "Analyzing intent…" → "Creating task…" etc.
 - UI redesigned to look like ChatGPT/Claude: branded logo avatars, clean message bubbles, premium input bar
 - VLM-rated 8/10 "real premium AI application feel"
+
+---
+Task ID: 5
+Agent: main
+Task: Add "New chat" and "Chat history" options to the AI chat — multi-session support
+
+Work Log:
+
+## Store Changes (V7 multi-chat sessions)
+- Added `ChatSession` type to types.ts: { id, title, created_at, updated_at, message_count, pinned }
+- Added `chatSessions: ChatSession[]` + `activeChatSessionId: string | null` to AppState
+- Added 6 new store actions:
+  - `startNewChat()` — creates a new session, sets it active, returns session id
+  - `switchChat(sessionId)` — sets activeChatSessionId
+  - `deleteChatSession(sessionId)` — removes session + its messages, auto-switches to next
+  - `renameChatSession(sessionId, title)` — updates title
+  - `pinChatSession(sessionId, pinned)` — toggles pinned flag
+  - `getActiveChatMessages()` — selector helper
+- Updated `appendAIChat()` — auto-creates a session if none active, tags message with session_id, increments message_count, updates updated_at, auto-generates title from first user message
+- Updated `clearAIChat()` — now also clears chatSessions + activeChatSessionId
+- Bumped persist version 6 → 7 with merge backfill for chatSessions + activeChatSessionId
+- Increased message retention from 200 → 500
+
+## AI Chat View Changes
+- Added top toolbar with two buttons:
+  - "New chat" (Plus icon, primary/10 background) — calls startNewChat(), resets to empty state
+  - "History" (History icon, muted background) — opens bottom sheet, shows count badge
+  - Active session title shown on right when chat has messages
+- Added chat history Sheet (bottom sheet):
+  - "Chat History" title with count
+  - Search bar (appears when >3 sessions)
+  - Session cards: icon, title, last message preview, date, message count
+  - Active session highlighted with primary border + bg
+  - Pinned sessions sort to top
+  - Action buttons on each card: Pin/Unpin, Rename (Pencil), Delete (Trash)
+  - Empty state with "Start new chat" CTA
+  - Footer "Start new chat" gradient button
+- Added rename AlertDialog — input field pre-filled with current title, Cancel/Save
+- Added delete confirmation AlertDialog — red warning, Cancel/Delete
+- `chatHistory` is now derived via useMemo — filters allChatHistory by activeChatSessionId
+- "Clear conversation" → "Clear all chats" (warns it clears everything)
+
+## Verification (all browser-tested)
+- ✅ `bun run lint` — passes with 0 errors
+- ✅ Console completely clean — no errors, no warnings
+- ✅ Toolbar visible with "New chat" + "History 2" badge
+- ✅ Sending first message auto-creates a session with auto-generated title
+- ✅ "New chat" creates empty session, History badge increments
+- ✅ History sheet shows all sessions with titles, message counts, dates, previews
+- ✅ Clicking a session in history switches to it, sheet closes, messages load
+- ✅ Rename dialog works — typed "BCA Prep Memory", saved, title updated in list
+- ✅ Pin works — pinned chat sorts to top with pin icon
+- ✅ Delete confirmation dialog works — Cancel keeps chat, Delete removes it
+- ✅ Auto-switch: deleting active chat switches to next available session
+
+Stage Summary:
+- AI chat now supports multiple conversations like ChatGPT/Claude
+- "New chat" button creates fresh conversation
+- "History" button opens bottom sheet with all past chats
+- Each chat has: auto-title (from first message), rename, pin, delete
+- Sessions persist across app restarts (Zustand persist v7)
+- VLM-verified all features working

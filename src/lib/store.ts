@@ -11,7 +11,7 @@ import type {
   ConversationSummary, AINotification,
   NotificationPreferences, LearningProfile, RecoveryItem,
   NotificationCategory, NotificationTone, NotificationAction,
-  AccentColorKey, AccentColorDef,
+  AccentColorKey, AccentColorDef, ChatSession,
 } from './types';
 import {
   DEFAULT_SECTIONS, DEFAULT_HABITS, DEFAULT_ROUTINE,
@@ -162,6 +162,13 @@ interface StoreActions {
   // ai chat (V2)
   appendAIChat: (msg: Omit<AIChatMessageStore, 'id' | 'timestamp'>) => void;
   clearAIChat: () => void;
+  // V7: multi-chat sessions
+  startNewChat: () => string;                                    // returns new session id
+  switchChat: (sessionId: string) => void;
+  deleteChatSession: (sessionId: string) => void;
+  renameChatSession: (sessionId: string, title: string) => void;
+  pinChatSession: (sessionId: string, pinned: boolean) => void;
+  getActiveChatMessages: () => AIChatMessageStore[];            // selector helper
   // memories (V3)
   addMemory: (input: Omit<AIMemoryItem, 'id' | 'createdAt' | 'updatedAt' | 'useCount'>) => string;
   updateMemory: (id: string, patch: Partial<AIMemoryItem>) => void;
@@ -207,6 +214,9 @@ const initialAppState: AppState = {
   journal: [],
   knowledgeNotes: [],
   aiChatHistory: [],
+  // V7: multi-chat sessions
+  chatSessions: [],
+  activeChatSessionId: null,
   memories: [],
   conversationSummaries: [],
   aiNotifications: [],
@@ -491,15 +501,96 @@ export const useStore = create<Store>()(
       deleteKnowledgeNote: (id) =>
         set((s) => ({ knowledgeNotes: s.knowledgeNotes.filter((n) => n.id !== id) })),
 
-      // ---------- AI Chat History (V2) ----------
+      // ---------- AI Chat History (V2 + V7 multi-session) ----------
       appendAIChat: (msg) =>
+        set((s) => {
+          // V7: auto-create a session if none is active
+          let activeSessionId = s.activeChatSessionId;
+          let chatSessions = s.chatSessions;
+          if (!activeSessionId) {
+            activeSessionId = `s-${uuid().slice(0, 8)}`;
+            const now = new Date().toISOString();
+            // Auto-generate title from first user message
+            const title = msg.role === 'user'
+              ? msg.content.slice(0, 40) + (msg.content.length > 40 ? '…' : '')
+              : 'New conversation';
+            chatSessions = [{
+              id: activeSessionId,
+              title,
+              created_at: now,
+              updated_at: now,
+              message_count: 0,
+              pinned: false,
+            }, ...s.chatSessions];
+          }
+
+          const newMsg: AIChatMessageStore = {
+            id: `c-${uuid().slice(0, 8)}`,
+            timestamp: new Date().toISOString(),
+            session_id: activeSessionId,
+            ...msg,
+          };
+
+          // Update the active session's message_count + updated_at
+          chatSessions = chatSessions.map((sess) =>
+            sess.id === activeSessionId
+              ? { ...sess, message_count: sess.message_count + 1, updated_at: newMsg.timestamp }
+              : sess,
+          );
+
+          return {
+            aiChatHistory: [...s.aiChatHistory, newMsg].slice(-500), // keep last 500 messages
+            chatSessions,
+            activeChatSessionId: activeSessionId,
+          };
+        }),
+      clearAIChat: () => set({ aiChatHistory: [], chatSessions: [], activeChatSessionId: null }),
+
+      // ---------- V7: Multi-chat session actions ----------
+      startNewChat: () => {
+        const sessionId = `s-${uuid().slice(0, 8)}`;
+        const now = new Date().toISOString();
         set((s) => ({
-          aiChatHistory: [
-            ...s.aiChatHistory,
-            { id: `c-${uuid().slice(0, 8)}`, timestamp: new Date().toISOString(), ...msg },
-          ].slice(-200), // keep last 200 messages
+          activeChatSessionId: sessionId,
+          chatSessions: [
+            { id: sessionId, title: 'New conversation', created_at: now, updated_at: now, message_count: 0, pinned: false },
+            ...s.chatSessions,
+          ],
+        }));
+        return sessionId;
+      },
+      switchChat: (sessionId) => set({ activeChatSessionId: sessionId }),
+      deleteChatSession: (sessionId) =>
+        set((s) => {
+          const remaining = s.chatSessions.filter((sess) => sess.id !== sessionId);
+          const remainingMessages = s.aiChatHistory.filter((m) => m.session_id !== sessionId);
+          // If we deleted the active session, switch to the most recent remaining one (or null)
+          const newActive = s.activeChatSessionId === sessionId
+            ? (remaining.length > 0 ? remaining[0].id : null)
+            : s.activeChatSessionId;
+          return {
+            chatSessions: remaining,
+            aiChatHistory: remainingMessages,
+            activeChatSessionId: newActive,
+          };
+        }),
+      renameChatSession: (sessionId, title) =>
+        set((s) => ({
+          chatSessions: s.chatSessions.map((sess) =>
+            sess.id === sessionId ? { ...sess, title: title.trim() || 'Untitled' } : sess,
+          ),
         })),
-      clearAIChat: () => set({ aiChatHistory: [] }),
+      pinChatSession: (sessionId, pinned) =>
+        set((s) => ({
+          chatSessions: s.chatSessions.map((sess) =>
+            sess.id === sessionId ? { ...sess, pinned } : sess,
+          ),
+        })),
+      getActiveChatMessages: () => {
+        const s = get();
+        if (!s.activeChatSessionId) return [];
+        return s.aiChatHistory.filter((m) => m.session_id === s.activeChatSessionId);
+      },
 
       // ---------- Memories (V3) ----------
       addMemory: (input) => {
@@ -768,9 +859,9 @@ export const useStore = create<Store>()(
     {
       name: 'july-plan-store',
       storage: createJSONStorage(() => localStorage),
-      version: 6,
+      version: 7,
       // Backfill missing fields from defaults — important when migrating
-      // between V1 → V2 → V3 → V4 → V4.1 schemas.
+      // between V1 → V2 → V3 → V4 → V4.1 → V6 → V7 schemas.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppState>;
         const c = current as AppState;
@@ -778,6 +869,10 @@ export const useStore = create<Store>()(
           ...c,
           ...p,
           settings: { ...c.settings, ...(p.settings ?? {}) },
+          // V7: backfill chat sessions — migrate old ungrouped messages into a single "Previous chat" session
+          chatSessions: p.chatSessions ?? c.chatSessions,
+          activeChatSessionId: p.activeChatSessionId ?? c.activeChatSessionId,
+          aiChatHistory: p.aiChatHistory ?? c.aiChatHistory,
           memories: p.memories ?? c.memories,
           conversationSummaries: p.conversationSummaries ?? c.conversationSummaries,
           aiNotifications: p.aiNotifications ?? c.aiNotifications,
