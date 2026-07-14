@@ -208,3 +208,79 @@ Stage Summary:
 - Logout now requires confirmation with context-aware warning (offline vs cloud)
 - Bottom nav badges moved from above-label to top-right-corner-of-icon with contrast ring
 - Files modified: src/components/app/launch-animation.tsx, src/components/app/mobile-shell.tsx, src/app/globals.css
+
+---
+Task ID: 4
+Agent: main
+Task: Make AI dashboard smart for new users, fix loading-stuck-after-answer bug, add dynamic thinking/working status, redesign AI chat UI to look like a real premium AI app
+
+Work Log:
+
+## PROBLEM ANALYSIS (deep read of ai-chat.tsx + action-router.tsx + manager.ts + api/ai/route.ts)
+
+### Problem 1: Loading stuck after answer (CRITICAL BUG)
+- ROOT CAUSE: In `handleSend()`, after `parseWithAI()` returns and the assistant reply is appended to chat, the code calls `await aiExtractMemories()` — a SECOND AI round-trip that extracts memories from the conversation.
+- This memory extraction is a full AI API call (temperature 0.1, 600 tokens) that blocks the `finally { setBusy(false) }` block.
+- So the user sees the answer, but the spinner keeps spinning for 5-15 more seconds while memory extraction runs.
+- FIX: Set `setBusy(false)` IMMEDIATELY after the reply is shown, and make memory extraction fire-and-forget (`.then().catch()` instead of `await`).
+
+### Problem 2: Generic spinner, no dynamic status
+- OLD: Just a `<Loader2 className="animate-spin" />` with no context.
+- FIX: Added `StatusPhase` type ('thinking' | 'parsing' | 'executing' | 'finalizing') and `getStatusText()` function that generates context-aware status messages based on the user's message keywords (memory → "Accessing your memories…", add/create → "Creating task…", etc.)
+
+### Problem 3: AI dashboard too complex for new users
+- OLD: Just a plain text input with 6 random suggestion buttons ("What should I focus on today?", "Remember that I am preparing for BCA", etc.) with no categorization or context.
+- FIX: Redesigned empty state with:
+  - Hero greeting with branded gradient logo icon + "Hi, I'm your AI coach" + descriptive subtitle
+  - 3 capability chips (Tasks, Memory, Planning) with colored icons
+  - 4 categorized suggestion cards (Quick Actions, Memory, Planning, Insights) each with icon, title, subtitle, and 3 example prompts
+  - Animated entrance (staggered fade-in)
+  - "TRY THESE" header with lightbulb icon
+
+### Problem 4: AI chat UI doesn't look like a real AI app
+- OLD: Generic Bot icon avatars, basic message bubbles, cluttered header with provider/model info
+- FIX:
+  - Branded logo avatars (uses /logo.png in a gradient-primary-strong rounded square) for AI messages + thinking indicator
+  - Cleaner message bubbles with rounded-2xl + asymmetric corners (rounded-tr-md for user, rounded-tl-md for AI)
+  - Premium input bar with 12px height, rounded-2xl, gradient send button with ArrowUp icon (only colored when text present)
+  - Status footer showing provider/model/memory count when idle
+  - Pending confirmation hint ("Type yes to confirm or no to cancel")
+  - Clear conversation link below input
+  - Removed duplicate header (mobile shell already has top app bar)
+  - Animated thinking indicator with branded avatar + 3 bouncing dots + dynamic status text
+
+## Implementation Details
+
+### ai-chat.tsx — Complete rewrite
+- Added `StatusPhase` type + `getStatusText()` function with keyword-based dynamic messages
+- Added `SUGGESTION_CATEGORIES` array with 4 categories × 3 prompts each = 12 smart suggestions
+- Refactored `handleSend` with `useCallback` for stable reference
+- CRITICAL FIX: `setBusy(false)` now called IMMEDIATELY after reply is appended (both local and AI paths)
+- Memory extraction is now `.then().catch()` fire-and-forget — no longer blocks UI
+- Added `showSuggestions` state — hides when user sends first message, shows again on clear
+- Added pending confirmation visual hint (amber banner: "Type yes to confirm or no to cancel")
+- Branded logo avatars replace generic Bot icons
+- Premium input bar with gradient send button (ArrowUp icon, only enabled when text present)
+- Status footer with provider/model/memory count
+- Smooth auto-scroll with `behavior: 'smooth'`
+- Framer Motion animations for message entrance + thinking indicator
+
+### Files Modified
+- `src/components/app/views/ai-chat.tsx` — complete rewrite (~580 lines)
+
+Verification:
+- ✅ `bun run lint` — passes with 0 errors
+- ✅ Console completely clean — no errors, no warnings
+- ✅ Loading bug FIXED: VLM confirmed "AI response visible; loading indicator gone; stopped loading after answering"
+- ✅ Dynamic status working: VLM confirmed "Analyzing intent..." with animated dots and branded avatar
+- ✅ Smart empty state: VLM confirmed hero greeting, capability chips, 4 categorized suggestion cards — rated 8/10 "real AI app feel"
+- ✅ Branded avatars: VLM confirmed "branded circular logo" on AI messages and thinking indicator
+- ✅ Local fast-path (remember command) responds instantly with no stuck loading
+- ✅ AI fallback path (How am I doing this week?) shows thinking → analyzing → response, then loading stops immediately
+
+Stage Summary:
+- AI chat is now smart for new users: categorized suggestions, capability hints, hero greeting
+- Loading-stuck-after-answer bug FIXED — memory extraction is now non-blocking fire-and-forget
+- Dynamic status messages replace generic spinner: "Thinking…" → "Analyzing intent…" → "Creating task…" etc.
+- UI redesigned to look like ChatGPT/Claude: branded logo avatars, clean message bubbles, premium input bar
+- VLM-rated 8/10 "real premium AI application feel"

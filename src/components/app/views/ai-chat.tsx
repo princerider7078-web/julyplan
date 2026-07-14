@@ -1,30 +1,93 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth/context';
-import { aiChat, aiExtractMemories } from '@/lib/ai';
-import { tryLocalParse, parseWithAI, executeActions, type AppAction, type ActionEnvelope } from '@/lib/ai/action-router';
+import { aiExtractMemories } from '@/lib/ai';
+import { tryLocalParse, parseWithAI, executeActions } from '@/lib/ai/action-router';
 import type { ViewKey } from '@/components/app/sidebar';
-import { buildLocalContext, retrieveRelevantMemories } from '@/lib/ai/context';
-import { parseCommand, executeMemoryCommand, detectCategory } from '@/lib/ai/commands';
-import { parseTaskAction, executeTaskAction } from '@/lib/ai/task-manager';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { buildLocalContext } from '@/lib/ai/context';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
-  Brain, Send, Loader2, Trash2, Sparkles, User, Bot, Cpu, HelpCircle,
+  Brain, Trash2, User,
+  ArrowUp, Lightbulb, Zap, Calendar,
+  CheckCircle2, Clock, AlertCircle, ChevronRight,
 } from 'lucide-react';
 import { todayISO, cn } from '@/lib/utils';
 
-const SUGGESTIONS = [
-  'What should I focus on today?',
-  'Remember that I am preparing for BCA',
-  'Add gym tomorrow 7 AM',
-  'Show my memories',
-  'Help',
-  'Generate my evening plan',
+// ─── Smart suggestion categories for new users ───
+const SUGGESTION_CATEGORIES = [
+  {
+    icon: Zap,
+    color: '#f59e0b',
+    title: 'Quick Actions',
+    subtitle: 'Manage tasks instantly',
+    prompts: [
+      'Add gym tomorrow 7 AM',
+      "What should I focus on today?",
+      'Show my tasks for today',
+    ],
+  },
+  {
+    icon: Brain,
+    color: '#a855f7',
+    title: 'Memory',
+    subtitle: 'I\'ll remember anything',
+    prompts: [
+      'Remember that I am preparing for BCA',
+      'Remember I prefer waking up at 5 AM',
+      'Show my memories',
+    ],
+  },
+  {
+    icon: Calendar,
+    color: '#10b981',
+    title: 'Planning',
+    subtitle: 'Get a smart plan',
+    prompts: [
+      'Generate my evening plan',
+      'Plan my tomorrow',
+      'What habits should I build?',
+    ],
+  },
+  {
+    icon: Lightbulb,
+    color: '#3b82f6',
+    title: 'Insights',
+    subtitle: 'Personalized advice',
+    prompts: [
+      'How am I doing this week?',
+      'Where can I improve?',
+      'Motivate me to stay on track',
+    ],
+  },
 ];
+
+// ─── Dynamic status messages ───
+type StatusPhase = 'thinking' | 'parsing' | 'executing' | 'finalizing';
+
+function getStatusText(phase: StatusPhase, message: string): string {
+  const lowerMsg = message.toLowerCase();
+  switch (phase) {
+    case 'thinking':
+      if (/remember|forget|memory|memorize/.test(lowerMsg)) return 'Accessing your memories…';
+      if (/add|create|new|schedule/.test(lowerMsg)) return 'Understanding your request…';
+      if (/delete|remove|clear/.test(lowerMsg)) return 'Checking what to remove…';
+      if (/plan|schedule|organize/.test(lowerMsg)) return 'Thinking about your plan…';
+      if (/show|list|what|how/.test(lowerMsg)) return 'Looking into your data…';
+      return 'Thinking…';
+    case 'parsing':
+      return 'Analyzing intent…';
+    case 'executing':
+      if (/remember|forget/.test(lowerMsg)) return 'Updating memory…';
+      if (/add|create|schedule/.test(lowerMsg)) return 'Creating task…';
+      if (/delete|remove/.test(lowerMsg)) return 'Removing…';
+      if (/plan/.test(lowerMsg)) return 'Building your plan…';
+      return 'Working on it…';
+    case 'finalizing':
+      return 'Finalizing response…';
+  }
+}
 
 export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }) {
   const settings = useStore((s) => s.settings);
@@ -34,51 +97,50 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
   const chatHistory = useStore((s) => s.aiChatHistory);
   const appendAIChat = useStore((s) => s.appendAIChat);
   const clearAIChat = useStore((s) => s.clearAIChat);
-  const addMemory = useStore((s) => s.addMemory);
   const memories = useStore((s) => s.memories);
 
   const { profile, isOffline } = useAuth();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [statusPhase, setStatusPhase] = useState<StatusPhase>('thinking');
   const [error, setError] = useState<string | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{ message: string; execute: () => void } | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom on new message
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
-  }, [chatHistory]);
+  }, [chatHistory, busy, statusPhase]);
 
-  async function handleSend(rawMessage: string) {
+  const handleSend = useCallback(async (rawMessage: string) => {
     const message = rawMessage.trim();
     if (!message || busy) return;
 
     // Check for pending confirmation (yes/no)
     if (pendingConfirm) {
       const lower = message.toLowerCase();
-      const isConfirm = lower === 'yes' || lower === 'y' || lower === 'ok' || lower === 'haan' || lower === 'confirm' || lower === 'pakka' || lower === 'kar do' || lower === 'sure' || lower === 'ha' || lower === 'ji';
+      const isConfirm = /^(yes|y|ok|haan|confirm|pakka|kar do|sure|ha|ji)\b/.test(lower);
+      appendAIChat({ role: 'user', content: message });
       if (isConfirm) {
-        appendAIChat({ role: 'user', content: message });
-        // Execute the pending action
         pendingConfirm.execute();
-        setPendingConfirm(null);
-        return;
       } else {
-        appendAIChat({ role: 'user', content: message });
-        appendAIChat({ role: 'assistant', content: '❌ Cancelled. Nothing was deleted.' });
-        setPendingConfirm(null);
-        return;
+        appendAIChat({ role: 'assistant', content: '❌ Cancelled. Nothing was changed.' });
       }
+      setPendingConfirm(null);
+      return;
     }
 
     setError(null);
+    setShowSuggestions(false);
     appendAIChat({ role: 'user', content: message });
     setInput('');
     setBusy(true);
+    setStatusPhase('thinking');
 
     try {
       const today = todayISO();
@@ -87,6 +149,7 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
       const localResult = tryLocalParse(message);
 
       if (localResult) {
+        setStatusPhase('executing');
         if (localResult.actions.length > 0 && !localResult.needs_confirmation) {
           const { results, navigateTo } = executeActions(localResult.actions);
           const replyText = localResult.reply || results.map(r => r.message).join('\n');
@@ -107,9 +170,9 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
           setPendingConfirm({
             message: localResult.confirmation_question || 'Confirm?',
             execute: () => {
+              setStatusPhase('executing');
               const { results } = executeActions(localResult.actions);
               appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') });
-              // Sync deletions to Supabase
               if (profile?.id && !isOffline) {
                 for (const result of results) {
                   if (result.taskId) {
@@ -126,11 +189,14 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
           appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') || localResult.reply });
           if (navigateTo) setTimeout(() => onNavigate?.(navigateTo as ViewKey), 500);
         }
+        // ✅ FIXED: set busy=false BEFORE memory extraction (which is non-blocking now)
         setBusy(false);
         return;
       }
 
       // ─── STEP 2: AI fallback (when local parse doesn't match) ───
+      setStatusPhase('parsing');
+
       const ctx = buildLocalContext({
         todayTasks: tasks.filter((t) => t.status !== 'archived').slice(0, 5).map((t) => ({
           title: t.title, priority: t.priority, time: t.time, done: !!t.completionLog?.[today],
@@ -169,6 +235,8 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
         userId: profile?.id,
       });
 
+      setStatusPhase('executing');
+
       if (envelope.actions.length > 0 && !envelope.needs_confirmation) {
         const { results, navigateTo } = executeActions(envelope.actions);
         const replyText = envelope.reply || results.map(r => r.message).join('\n');
@@ -189,9 +257,9 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
         setPendingConfirm({
           message: envelope.confirmation_question ?? 'Confirm?',
           execute: () => {
+            setStatusPhase('executing');
             const { results } = executeActions(envelope.actions);
             appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') || 'Done.' });
-            // Sync deletions to Supabase
             if (profile?.id && !isOffline) {
               for (const result of results) {
                 if (result.taskId) {
@@ -205,10 +273,18 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
         appendAIChat({ role: 'assistant', content: envelope.reply });
       }
 
-      // ─── Auto-extract memories ───
-      try {
+      // ✅ CRITICAL FIX: Set busy=false IMMEDIATELY after the reply is shown.
+      // Memory extraction is now fire-and-forget (non-blocking) so the user
+      // doesn't see a spinner after the answer is already visible.
+      setBusy(false);
+
+      // ─── Auto-extract memories (NON-BLOCKING, fire-and-forget) ───
+      // This runs in the background after the reply is shown.
+      // Errors are silently ignored — they don't affect the user experience.
+      if (envelope.reply && envelope.reply.length > 10) {
         const conv = `User: ${message}\n\nAssistant: ${envelope.reply}`;
-        const extraction = await aiExtractMemories(conv, {
+        // Fire-and-forget — no await, no busy state
+        aiExtractMemories(conv, {
           profile: {
             provider: settings.aiProvider ?? 'zai',
             model_chat: settings.aiModelChat ?? 'glm-4.6',
@@ -221,196 +297,280 @@ export function AIChatView({ onNavigate }: { onNavigate?: (v: ViewKey) => void }
             enabled_modules_json: settings.aiEnabledModules ?? [],
           },
           userId: profile?.id,
-        });
-
-        if (Array.isArray(extraction.json)) {
-          for (const m of extraction.json as Array<Record<string, string | number | undefined>>) {
-            if (m.memory_type && m.memory_key && m.memory_value) {
-              const existing = memories.find(
-                (e) => e.title.toLowerCase() === (m.memory_key as string).toLowerCase() ||
-                       e.content.toLowerCase() === (m.memory_value as string).toLowerCase(),
-              );
-              if (!existing) {
-                useStore.getState().addMemory({
-                  title: m.memory_key as string,
-                  content: m.memory_value as string,
-                  category: (m.memory_type as string) ?? 'custom',
-                  importance: 'medium',
-                  confidence: (m.confidence_score as number) ?? 0.6,
-                  source: 'chat',
-                });
+        }).then((extraction) => {
+          if (Array.isArray(extraction.json)) {
+            for (const m of extraction.json as Array<Record<string, string | number | undefined>>) {
+              if (m.memory_type && m.memory_key && m.memory_value) {
+                const existing = memories.find(
+                  (e) => e.title.toLowerCase() === (m.memory_key as string).toLowerCase() ||
+                         e.content.toLowerCase() === (m.memory_value as string).toLowerCase(),
+                );
+                if (!existing) {
+                  useStore.getState().addMemory({
+                    title: m.memory_key as string,
+                    content: m.memory_value as string,
+                    category: (m.memory_type as string) ?? 'custom',
+                    importance: 'medium',
+                    confidence: (m.confidence_score as number) ?? 0.6,
+                    source: 'chat',
+                  });
+                }
               }
             }
           }
-        }
-      } catch { /* silent */ }
+        }).catch(() => { /* silent — background extraction */ });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'AI request failed');
-    } finally {
       setBusy(false);
     }
+  }, [busy, pendingConfirm, profile, isOffline, settings, tasks, habits, finance, chatHistory, memories, onNavigate, appendAIChat]);
+
+  function handleClearChat() {
+    clearAIChat();
+    setShowSuggestions(true);
+    setError(null);
   }
 
+  const activeMemories = memories.filter((m) => !m.archived && !m.disabled).length;
+
   return (
-    <div className="space-y-4 h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-end justify-between gap-4 shrink-0">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground">AI Coach</p>
-          <h1 className="text-3xl font-bold tracking-tight mt-1 flex items-center gap-2">
-            <Brain className="h-7 w-7 text-primary" />
-            AI Assistant
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Provider: <span className="font-medium">{settings.aiProvider}</span> ·
-            Model: <span className="font-medium">{settings.aiModelChat}</span> ·
-            <span className="ml-1">{memories.filter((m) => !m.archived && !m.disabled).length} memories</span>
-            {isOffline && <span className="text-amber-500"> · offline</span>}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowHelp(!showHelp)}
-          >
-            <HelpCircle className="h-3.5 w-3.5 mr-1" /> Commands
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => clearAIChat()} title="Clear chat">
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Help panel */}
-      {showHelp && (
-        <Card className="shrink-0">
-          <CardContent className="p-4 text-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">AI Commands</h3>
-              <Button variant="ghost" size="sm" onClick={() => setShowHelp(false)}>Close</Button>
+    <div className="flex flex-col h-full relative">
+      {/* ═══ Chat messages area ═══ */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto scroll-thin px-3 py-4 space-y-4"
+      >
+        {/* Empty state — smart onboarding for new users */}
+        {chatHistory.length === 0 ? (
+          <div className="space-y-5 animate-fade-in">
+            {/* Hero greeting */}
+            <div className="text-center pt-2">
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 18 }}
+                className="inline-flex h-16 w-16 rounded-3xl gradient-primary-strong items-center justify-center shadow-lg mb-3"
+              >
+                <Brain className="h-8 w-8 text-white" strokeWidth={2} />
+              </motion.div>
+              <h2 className="text-xl font-bold tracking-tight">Hi, I'm your AI coach</h2>
+              <p className="text-sm text-muted-foreground mt-1.5 max-w-xs mx-auto leading-relaxed">
+                I can manage tasks, remember anything, plan your day, and give personalized advice. Just type naturally.
+              </p>
             </div>
-            <div className="grid md:grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">Memory</div>
-                <ul className="text-xs space-y-1">
-                  <li><code className="bg-muted px-1 rounded">remember that I wake up at 5 AM</code></li>
-                  <li><code className="bg-muted px-1 rounded">forget my coffee preference</code></li>
-                  <li><code className="bg-muted px-1 rounded">show my memories</code></li>
-                  <li><code className="bg-muted px-1 rounded">search memories for coding</code></li>
-                  <li><code className="bg-muted px-1 rounded">summarize my memories</code></li>
-                </ul>
-              </div>
-              <div>
-                <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">Tasks</div>
-                <ul className="text-xs space-y-1">
-                  <li><code className="bg-muted px-1 rounded">add gym tomorrow 7 AM</code></li>
-                  <li><code className="bg-muted px-1 rounded">delete today's workout</code></li>
-                  <li><code className="bg-muted px-1 rounded">complete grocery task</code></li>
-                  <li><code className="bg-muted px-1 rounded">move meeting to Friday</code></li>
-                  <li><code className="bg-muted px-1 rounded">show today's tasks</code></li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Chat messages */}
-      <Card className="flex-1 min-h-0 flex flex-col">
-        <CardContent className="flex-1 min-h-0 p-0">
-          <div
-            ref={scrollRef}
-            className="h-full overflow-y-auto scroll-thin p-4 space-y-3"
-          >
-            {chatHistory.length === 0 && (
-              <div className="text-center py-12 space-y-4">
-                <div className="inline-flex h-14 w-14 rounded-2xl bg-primary/10 items-center justify-center">
-                  <Sparkles className="h-7 w-7 text-primary" />
+            {/* Capabilities row */}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { icon: CheckCircle2, label: 'Tasks', color: '#10b981' },
+                { icon: Brain, label: 'Memory', color: '#a855f7' },
+                { icon: Calendar, label: 'Planning', color: '#f59e0b' },
+              ].map((cap) => (
+                <div key={cap.label} className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-card border border-border">
+                  <span className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ background: `color-mix(in oklch, ${cap.color} 15%, transparent)` }}>
+                    <cap.icon className="h-4 w-4" style={{ color: cap.color }} />
+                  </span>
+                  <span className="text-[11px] font-medium">{cap.label}</span>
                 </div>
-                <div>
-                  <h3 className="font-semibold">Ask your AI coach</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    I remember everything you tell me. I can manage tasks, set reminders, and use your memories to answer personally.
-                  </p>
+              ))}
+            </div>
+
+            {/* Categorized suggestions */}
+            {showSuggestions && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 px-1">
+                  <Lightbulb className="h-4 w-4 text-primary" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Try these</span>
                 </div>
-                <div className="flex flex-wrap gap-2 justify-center max-w-md">
-                  {SUGGESTIONS.map((s) => (
-                    <Button
-                      key={s}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleSend(s)}
+                {SUGGESTION_CATEGORIES.map((cat, catIdx) => {
+                  const Icon = cat.icon;
+                  return (
+                    <motion.div
+                      key={cat.title}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 + catIdx * 0.08 }}
+                      className="rounded-2xl border border-border bg-card overflow-hidden"
                     >
-                      {s}
-                    </Button>
-                  ))}
-                </div>
+                      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-border/50">
+                        <span className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `color-mix(in oklch, ${cat.color} 15%, transparent)` }}>
+                          <Icon className="h-3.5 w-3.5" style={{ color: cat.color }} />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold">{cat.title}</div>
+                          <div className="text-[10px] text-muted-foreground">{cat.subtitle}</div>
+                        </div>
+                      </div>
+                      <div className="p-1.5 space-y-1">
+                        {cat.prompts.map((prompt) => (
+                          <button
+                            key={prompt}
+                            onClick={() => handleSend(prompt)}
+                            className="w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium text-foreground hover:bg-accent/50 transition-colors flex items-center justify-between group"
+                          >
+                            <span className="flex-1">{prompt}</span>
+                            <ChevronRight className="h-3 w-3 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
-            {chatHistory.map((msg) => (
-              <div
+          </div>
+        ) : (
+          /* Chat messages */
+          <>
+            {chatHistory.map((msg, idx) => (
+              <motion.div
                 key={msg.id}
-                className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className={cn(
+                  'flex gap-2.5',
+                  msg.role === 'user' ? 'justify-end' : 'justify-start',
+                )}
               >
                 {msg.role === 'assistant' && (
-                  <div className="h-8 w-8 shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-primary" />
+                  <div className="h-8 w-8 shrink-0 rounded-xl gradient-primary-strong p-0.5 shadow-md shrink-0">
+                    <img src="/logo.png" alt="AI" className="h-full w-full rounded-lg object-cover" />
                   </div>
                 )}
                 <div
-                  className={`max-w-[80%] rounded-lg p-3 text-sm whitespace-pre-wrap ${
+                  className={cn(
+                    'max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed',
                     msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted'
-                  }`}
+                      ? 'bg-primary text-primary-foreground rounded-tr-md font-medium'
+                      : 'bg-card border border-border rounded-tl-md',
+                  )}
                 >
                   {msg.content}
                 </div>
                 {msg.role === 'user' && (
-                  <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center">
-                    <User className="h-4 w-4" />
+                  <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center border border-border">
+                    <User className="h-4 w-4 text-muted-foreground" />
                   </div>
                 )}
-              </div>
+              </motion.div>
             ))}
-            {busy && (
-              <div className="flex gap-3 justify-start">
-                <div className="h-8 w-8 shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Bot className="h-4 w-4 text-primary" />
-                </div>
-                <div className="bg-muted rounded-lg p-3">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                </div>
-              </div>
-            )}
-            {error && (
-              <div className="text-xs text-red-500 bg-red-500/10 p-2 rounded">
-                {error}
-              </div>
-            )}
-          </div>
-        </CardContent>
 
-        {/* Input */}
-        <div className="border-t border-border p-3 flex gap-2 shrink-0">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend(input);
-              }
-            }}
-            placeholder="Ask anything, or try: 'remember that...', 'add task tomorrow 7 AM', 'show memories'..."
-            disabled={false}
-          />
-          <Button onClick={() => handleSend(input)} disabled={busy || !input.trim()}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
+            {/* Dynamic thinking/working indicator */}
+            <AnimatePresence>
+              {busy && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="flex gap-2.5 justify-start"
+                >
+                  <div className="h-8 w-8 shrink-0 rounded-xl gradient-primary-strong p-0.5 shadow-md shrink-0">
+                    <img src="/logo.png" alt="AI" className="h-full w-full rounded-lg object-cover" />
+                  </div>
+                  <div className="bg-card border border-border rounded-2xl rounded-tl-md px-3.5 py-3 flex items-center gap-2.5">
+                    {/* Animated dots */}
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms', animationDuration: '1s' }} />
+                      <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '150ms', animationDuration: '1s' }} />
+                      <span className="h-2 w-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '300ms', animationDuration: '1s' }} />
+                    </div>
+                    <span className="text-xs text-muted-foreground font-medium">
+                      {getStatusText(statusPhase, chatHistory[chatHistory.length - 1]?.content ?? '')}
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Error */}
+            {error && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-start gap-2.5 rounded-2xl border border-red-500/30 bg-red-500/10 p-3"
+              >
+                <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                <span className="text-xs text-red-600 dark:text-red-300">{error}</span>
+              </motion.div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ═══ Input bar — premium AI app style ═══ */}
+      <div className="shrink-0 px-3 pb-2 pt-2">
+        {/* Status footer — shows AI state when idle */}
+        {!busy && chatHistory.length > 0 && (
+          <div className="flex items-center justify-between px-2 pb-1.5 text-[10px] text-muted-foreground/70">
+            <div className="flex items-center gap-1.5">
+              <span className={cn('h-1.5 w-1.5 rounded-full', isOffline ? 'bg-amber-500' : 'bg-emerald-500')} />
+              <span>{isOffline ? 'Offline mode' : settings.aiProvider} · {settings.aiModelChat}</span>
+            </div>
+            <span>{activeMemories} memories</span>
+          </div>
+        )}
+
+        {/* Pending confirmation hint */}
+        {pendingConfirm && (
+          <div className="mb-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
+            <Clock className="h-3 w-3" />
+            Type "yes" to confirm or "no" to cancel
+          </div>
+        )}
+
+        {/* Input row */}
+        <div className="relative flex items-center gap-2">
+          <div className="flex-1 relative">
+            <Input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(input);
+                }
+              }}
+              placeholder={pendingConfirm ? 'Type yes or no…' : 'Ask anything, or try "remember that…"'}
+              disabled={busy}
+              className="h-12 rounded-2xl pr-3 pl-4 text-sm bg-card border-border focus-visible:ring-1 focus-visible:ring-primary"
+            />
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={() => handleSend(input)}
+            disabled={busy || !input.trim()}
+            className={cn(
+              'h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-all shadow-md',
+              input.trim() && !busy
+                ? 'gradient-primary-strong text-white'
+                : 'bg-muted text-muted-foreground',
+            )}
+            aria-label="Send message"
+          >
+            {busy ? (
+              <div className="h-5 w-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            ) : (
+              <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
+            )}
+          </motion.button>
         </div>
-      </Card>
+
+        {/* Clear chat button (when history exists) */}
+        {!busy && chatHistory.length > 0 && (
+          <div className="flex justify-center mt-1.5">
+            <button
+              onClick={handleClearChat}
+              className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-3 py-1"
+            >
+              <Trash2 className="h-3 w-3" />
+              Clear conversation
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
