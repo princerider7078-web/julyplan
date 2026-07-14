@@ -348,7 +348,11 @@ RESPONSE FORMAT — always reply with exactly one JSON object, no markdown:
   "confirmation_question": string | null
 }
 
-Action format: { "domain": "task|habit|routine|journal|finance|knowledge|memory|notification|settings|navigation|report", "action": "action_name", "params": { ... } }
+CRITICAL RULES:
+1. If needs_confirmation is true, "reply" MUST be a QUESTION asking to confirm — NEVER say "done" or "deleted" or "completed". Example: "Pakka 'X' delete karna hai?"
+2. If needs_confirmation is false AND actions exist, actions WILL be executed automatically — so "reply" can say "done" or "added" etc.
+3. If needs_confirmation is false AND actions is empty, it's pure conversation.
+4. "actions" must ALWAYS contain the full action objects even when needs_confirmation is true — they will be executed when the user confirms.
 
 Available actions:
 - task: add_task, edit_task, complete_task, uncomplete_task, delete_task, move_task, duplicate_task, archive_task, show_tasks
@@ -364,16 +368,17 @@ Available actions:
 - report: generate_report, show_analytics
 
 CONFIRMATION RULES:
-- Require confirmation for: delete_task, delete_habit, delete_finance_entry, delete_knowledge_note, forget, reset_app, import_backup
-- No confirmation needed for: add_*, edit_*, complete_task, mark_habit_complete, navigate_to, show_*, generate_report
-- If user says "yes/haan/confirm/pakka" to a prior confirmation question, execute directly.
+- Require confirmation (needs_confirmation: true) for: delete_task, delete_habit, delete_finance_entry, delete_knowledge_note, forget, reset_app, import_backup
+- NO confirmation (needs_confirmation: false) for: add_*, edit_*, complete_task, mark_habit_complete, navigate_to, show_*, generate_report
+- If user's message confirms a prior question ("yes", "haan", "pakka", "confirm", "kar do"), set needs_confirmation: false and include the actions to execute.
 
 RULES:
 - Match task/habit/note references by title (exact → contains → word overlap).
 - Resolve relative dates ("tomorrow", "kal", "next Monday") to ISO dates using CURRENT_DATE.
 - Multiple requests in one message → multiple action objects in order.
 - "reply" should be warm, direct, under 60 words, matching user's language.
-- Never invent ids, streaks, balances, or past events.`;
+- Never invent ids, streaks, balances, or past events.
+- NEVER say "deleted" or "done" in reply when needs_confirmation is true.`;
 
 export async function parseWithAI(
   input: string,
@@ -382,10 +387,18 @@ export async function parseWithAI(
   opts?: Parameters<typeof aiChat>[3],
 ): Promise<ActionEnvelope> {
   try {
-    const response = await aiChat(input, ctx, history, {
-      ...opts,
-      profile: opts?.profile ? { ...opts.profile, temperature: 0.1, max_tokens: 800 } : undefined,
-    });
+    // Build messages manually with the ACTION system prompt (not BASE_SYSTEM)
+    const { aiChat } = await import('./index');
+    const response = await aiChat(
+      input,
+      ctx,
+      // Prepend the action system prompt as the first system message
+      [{ role: 'system', content: ACTION_SYSTEM_PROMPT }, ...history.slice(-4)],
+      {
+        ...opts,
+        profile: opts?.profile ? { ...opts.profile, temperature: 0.1, max_tokens: 800 } : undefined,
+      },
+    );
 
     // Try to parse JSON from response
     let json: unknown = response.json;

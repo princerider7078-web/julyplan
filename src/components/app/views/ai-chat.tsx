@@ -59,15 +59,16 @@ export function AIChatView() {
     // Check for pending confirmation (yes/no)
     if (pendingConfirm) {
       const lower = message.toLowerCase();
-      if (lower === 'yes' || lower === 'y' || lower === 'ok' || lower === 'haan' || lower === 'confirm' || lower === 'pakka' || lower === 'kar do') {
-        pendingConfirm.execute();
+      const isConfirm = lower === 'yes' || lower === 'y' || lower === 'ok' || lower === 'haan' || lower === 'confirm' || lower === 'pakka' || lower === 'kar do' || lower === 'sure' || lower === 'ha' || lower === 'ji';
+      if (isConfirm) {
         appendAIChat({ role: 'user', content: message });
-        appendAIChat({ role: 'assistant', content: '✅ Done successfully.' });
+        // Execute the pending action
+        pendingConfirm.execute();
         setPendingConfirm(null);
         return;
       } else {
         appendAIChat({ role: 'user', content: message });
-        appendAIChat({ role: 'assistant', content: '❌ Cancelled.' });
+        appendAIChat({ role: 'assistant', content: '❌ Cancelled. Nothing was deleted.' });
         setPendingConfirm(null);
         return;
       }
@@ -107,6 +108,14 @@ export function AIChatView() {
             execute: () => {
               const { results } = executeActions(localResult.actions);
               appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') });
+              // Sync deletions to Supabase
+              if (profile?.id && !isOffline) {
+                for (const result of results) {
+                  if (result.taskId) {
+                    import('@/lib/sync').then(({ deleteTaskRemote }) => deleteTaskRemote(profile.id, result.taskId));
+                  }
+                }
+              }
             },
           });
         } else if (localResult.reply) {
@@ -181,6 +190,14 @@ export function AIChatView() {
           execute: () => {
             const { results } = executeActions(envelope.actions);
             appendAIChat({ role: 'assistant', content: results.map(r => r.message).join('\n') || 'Done.' });
+            // Sync deletions to Supabase
+            if (profile?.id && !isOffline) {
+              for (const result of results) {
+                if (result.taskId) {
+                  import('@/lib/sync').then(({ deleteTaskRemote }) => deleteTaskRemote(profile.id, result.taskId));
+                }
+              }
+            }
           },
         });
       } else {
