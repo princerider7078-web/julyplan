@@ -1,11 +1,14 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const LAUNCH_KEY = 'july-plan-launch-shown';
 const ANIMATION_DURATION = 5500;
 
+type Phase = 'playing' | 'exiting' | 'done';
+
 export function LaunchAnimation({ children }: { children: React.ReactNode }) {
-  const [done, setDone] = useState(false);
+  const [phase, setPhase] = useState<Phase>('playing');
   const containerRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
 
@@ -15,15 +18,16 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
 
     queueMicrotask(async () => {
       const shown = sessionStorage.getItem(LAUNCH_KEY);
-      if (shown) { setDone(true); return; }
+      if (shown) { setPhase('done'); return; }
 
       const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (prefersReduced) { sessionStorage.setItem(LAUNCH_KEY, '1'); setDone(true); return; }
+      if (prefersReduced) { sessionStorage.setItem(LAUNCH_KEY, '1'); setPhase('done'); return; }
 
       sessionStorage.setItem(LAUNCH_KEY, '1');
 
-      // Safety timeout — always finish after 5.5s
-      setTimeout(() => setDone(true), ANIMATION_DURATION);
+      // Begin exit transition at ~4.6s (animation finishes ~4.75s); fade for ~0.6s, then done
+      setTimeout(() => setPhase('exiting'), 4600);
+      setTimeout(() => setPhase('done'), ANIMATION_DURATION);
 
       // Load GSAP + run animation
       try {
@@ -46,7 +50,6 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
           });
         }
 
-        // Wait for DOM
         await new Promise((r) => setTimeout(r, 100));
 
         const gsap = (window as any).gsap;
@@ -115,51 +118,68 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
           .to([sweepGlow, sweepGlow2], { opacity: 0, duration: 0.2, ease: 'power2.in' }, 4.6);
         tl.to(circleGlow, { opacity: 0, duration: 0.4, ease: 'power2.in' }, 4.2);
       } catch (e) {
-        setDone(true);
+        setPhase('done');
       }
     });
   }, []);
 
-  if (done) return <>{children}</>;
+  if (phase === 'done') return <>{children}</>;
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black flex items-center justify-center">
-      <div id="jp-stage" ref={containerRef} style={{
-        width: 'min(560px, 90vw)', aspectRatio: '400 / 480',
-        position: 'relative', opacity: 0, willChange: 'opacity, transform',
-      }}>
-        <svg viewBox="0 0 400 480" xmlns="http://www.w3.org/2000/svg"
-          style={{ width: '100%', height: '100%', overflow: 'visible', display: 'block' }}
-          aria-label="July Plan logo animation">
-          <defs>
-            <linearGradient id="jp-cg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#0A2540"/><stop offset="45%" stopColor="#0E5C8B"/><stop offset="100%" stopColor="#18A8A0"/></linearGradient>
-            <linearGradient id="jp-jg" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stopColor="#0A2540"/><stop offset="100%" stopColor="#18A8A0"/></linearGradient>
-            <linearGradient id="jp-pg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#18A8A0"/><stop offset="100%" stopColor="#3DDC97"/></linearGradient>
-            <linearGradient id="jp-ag" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#18A8A0"/><stop offset="100%" stopColor="#7CF0C0"/></linearGradient>
-            <linearGradient id="jp-tg" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#FFFFFF"/><stop offset="60%" stopColor="#E8F4F1"/><stop offset="100%" stopColor="#7CF0C0"/></linearGradient>
-            <filter id="jp-sgf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-            <filter id="jp-sbf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
-            <clipPath id="jp-pc"><rect x="200" y="100" width="0" height="220" id="jp-pClipRect"/></clipPath>
-          </defs>
-          <path id="jp-circleGlow" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="url(#jp-cg)" strokeWidth="8" strokeLinecap="round" opacity="0" filter="url(#jp-sgf)"/>
-          <path id="jp-circle" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="url(#jp-cg)" strokeWidth="3" strokeLinecap="round"/>
-          <path id="jp-arrowShaft" d="M 175,140 Q 218,108 252,82" fill="none" stroke="url(#jp-ag)" strokeWidth="3.5" strokeLinecap="round"/>
-          <path id="jp-arrowHead" d="M 240,92 L 274,60 L 258,98 Z" fill="#7CF0C0" opacity="0" style={{transformOrigin:'268px 78px'}}/>
-          <path id="jp-jLetter" d="M 152,243 Q 152,265 175,265 Q 198,265 198,243 L 198,140" fill="none" stroke="url(#jp-jg)" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round"/>
-          <g clipPath="url(#jp-pc)"><path id="jp-pLetter" d="M 218,278 L 218,138 Q 268,138 268,176 Q 268,214 218,214" fill="none" stroke="url(#jp-pg)" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round"/></g>
-          <rect id="jp-line1" x="62" y="178" width="56" height="4" rx="2" fill="#3DDC97" opacity="0"/>
-          <rect id="jp-line2" x="62" y="198" width="68" height="4" rx="2" fill="#2D9CDB" opacity="0"/>
-          <rect id="jp-line3" x="62" y="218" width="48" height="4" rx="2" fill="#6B7280" opacity="0"/>
-          <path id="jp-checkmark" d="M 222,270 L 236,286 L 268,252" fill="none" stroke="#18A8A0" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" opacity="0" style={{transformOrigin:'245px 269px'}}/>
-          <text id="jp-brandText" x="200" y="418" textAnchor="middle" fontFamily="-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',sans-serif" fontSize="34" fontWeight="300" letterSpacing="20" fill="url(#jp-tg)" opacity="0">July Plan</text>
-          <path id="jp-sweepGlow" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" opacity="0" filter="url(#jp-sbf)"/>
-          <path id="jp-sweepGlow2" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="#7CF0C0" strokeWidth="14" strokeLinecap="round" opacity="0" filter="url(#jp-sbf)"/>
-        </svg>
-      </div>
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="text-white/20 text-sm">Loading…</div>
-      </div>
-      <button onClick={() => setDone(true)} className="absolute bottom-6 right-6 text-white/40 hover:text-white/70 text-xs uppercase tracking-wider transition-colors z-10">Skip →</button>
-    </div>
+    <>
+      {/* Children are mounted underneath so the fade reveals them smoothly */}
+      <div className="block">{children}</div>
+
+      <AnimatePresence>
+        <motion.div
+          key="launch"
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.6, ease: [0.2, 0, 0, 1] }}
+          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          style={{
+            background: 'radial-gradient(ellipse at center, #0a1620 0%, #000 70%)',
+          }}
+        >
+          <div id="jp-stage" ref={containerRef} style={{
+            width: 'min(560px, 90vw)', aspectRatio: '400 / 480',
+            position: 'relative', opacity: 0, willChange: 'opacity, transform',
+          }}>
+            <svg viewBox="0 0 400 480" xmlns="http://www.w3.org/2000/svg"
+              style={{ width: '100%', height: '100%', overflow: 'visible', display: 'block' }}
+              aria-label="July Plan logo animation">
+              <defs>
+                <linearGradient id="jp-cg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#0A2540"/><stop offset="45%" stopColor="#0E5C8B"/><stop offset="100%" stopColor="#18A8A0"/></linearGradient>
+                <linearGradient id="jp-jg" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stopColor="#0A2540"/><stop offset="100%" stopColor="#18A8A0"/></linearGradient>
+                <linearGradient id="jp-pg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#18A8A0"/><stop offset="100%" stopColor="#3DDC97"/></linearGradient>
+                <linearGradient id="jp-ag" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#18A8A0"/><stop offset="100%" stopColor="#7CF0C0"/></linearGradient>
+                <linearGradient id="jp-tg" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#FFFFFF"/><stop offset="60%" stopColor="#E8F4F1"/><stop offset="100%" stopColor="#7CF0C0"/></linearGradient>
+                <filter id="jp-sgf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                <filter id="jp-sbf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
+                <clipPath id="jp-pc"><rect x="200" y="100" width="0" height="220" id="jp-pClipRect"/></clipPath>
+              </defs>
+              <path id="jp-circleGlow" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="url(#jp-cg)" strokeWidth="8" strokeLinecap="round" opacity="0" filter="url(#jp-sgf)"/>
+              <path id="jp-circle" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="url(#jp-cg)" strokeWidth="3" strokeLinecap="round"/>
+              <path id="jp-arrowShaft" d="M 175,140 Q 218,108 252,82" fill="none" stroke="url(#jp-ag)" strokeWidth="3.5" strokeLinecap="round"/>
+              <path id="jp-arrowHead" d="M 240,92 L 274,60 L 258,98 Z" fill="#7CF0C0" opacity="0" style={{transformOrigin:'268px 78px'}}/>
+              <path id="jp-jLetter" d="M 152,243 Q 152,265 175,265 Q 198,265 198,243 L 198,140" fill="none" stroke="url(#jp-jg)" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round"/>
+              <g clipPath="url(#jp-pc)"><path id="jp-pLetter" d="M 218,278 L 218,138 Q 268,138 268,176 Q 268,214 218,214" fill="none" stroke="url(#jp-pg)" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round"/></g>
+              <rect id="jp-line1" x="62" y="178" width="56" height="4" rx="2" fill="#3DDC97" opacity="0"/>
+              <rect id="jp-line2" x="62" y="198" width="68" height="4" rx="2" fill="#2D9CDB" opacity="0"/>
+              <rect id="jp-line3" x="62" y="218" width="48" height="4" rx="2" fill="#6B7280" opacity="0"/>
+              <path id="jp-checkmark" d="M 222,270 L 236,286 L 268,252" fill="none" stroke="#18A8A0" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" opacity="0" style={{transformOrigin:'245px 269px'}}/>
+              <text id="jp-brandText" x="200" y="418" textAnchor="middle" fontFamily="-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',sans-serif" fontSize="34" fontWeight="300" letterSpacing="20" fill="url(#jp-tg)" opacity="0">July Plan</text>
+              <path id="jp-sweepGlow" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" opacity="0" filter="url(#jp-sbf)"/>
+              <path id="jp-sweepGlow2" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="#7CF0C0" strokeWidth="14" strokeLinecap="round" opacity="0" filter="url(#jp-sbf)"/>
+            </svg>
+          </div>
+          <button
+            onClick={() => setPhase('done')}
+            className="absolute bottom-8 right-8 text-white/40 hover:text-white/80 text-[11px] uppercase tracking-[0.2em] font-medium transition-colors z-10 px-3 py-1.5 rounded-full border border-white/15"
+          >
+            Skip
+          </button>
+        </motion.div>
+      </AnimatePresence>
+    </>
   );
 }

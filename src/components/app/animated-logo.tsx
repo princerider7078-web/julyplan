@@ -1,23 +1,71 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * July Plan Animated Logo — reusable React component.
- * Renders the SVG inline + runs the GSAP animation.
- * Can be used at ANY size via the `size` prop.
- *
- * Usage:
- *   <AnimatedLogo size={36} />   // sidebar
- *   <AnimatedLogo size={80} />   // login
- *   <AnimatedLogo size={560} />  // launch
- *   <AnimatedLogo size={560} playOnce={false} />  // loop (not recommended)
+ * Renders the SVG inline + runs the GSAP animation when size >= 120.
+ * For small sizes (icon usage), renders a static completed logo (no GSAP).
  */
 
 interface AnimatedLogoProps {
-  size?: number;          // pixel size (default: 80)
-  playOnce?: boolean;     // true = play once on mount, false = play every time visible (default: true)
-  showText?: boolean;     // show "July Plan" text at bottom (default: true for large sizes)
+  size?: number;
+  playOnce?: boolean;
+  showText?: boolean;
   className?: string;
+}
+
+// Static, "completed" state of the logo — used for small icon sizes
+// Uses bright teal/green colors only so it's visible on any background
+function StaticLogo({ size, showText }: { size: number; showText: boolean }) {
+  const shouldShowText = showText && size >= 120;
+  const h = shouldShowText ? size * (480 / 400) : size;
+
+  return (
+    <div
+      style={{ width: size, height: h, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <svg
+        viewBox="0 0 400 480"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ width: '100%', height: '100%', overflow: 'visible' }}
+        aria-label="July Plan"
+      >
+        <defs>
+          <linearGradient id="al-cg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#18A8A0" />
+            <stop offset="100%" stopColor="#3DDC97" />
+          </linearGradient>
+          <linearGradient id="al-jg" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" stopColor="#18A8A0" />
+            <stop offset="100%" stopColor="#3DDC97" />
+          </linearGradient>
+          <linearGradient id="al-pg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3DDC97" />
+            <stop offset="100%" stopColor="#7CF0C0" />
+          </linearGradient>
+          <linearGradient id="al-ag" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#18A8A0" />
+            <stop offset="100%" stopColor="#7CF0C0" />
+          </linearGradient>
+        </defs>
+        {/* Circle - completed */}
+        <path d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345"
+          fill="none" stroke="url(#al-cg)" strokeWidth="3" strokeLinecap="round" />
+        {/* Arrow - completed */}
+        <path d="M 175,140 Q 218,108 252,82" fill="none" stroke="url(#al-ag)" strokeWidth="3.5" strokeLinecap="round" />
+        <path d="M 240,92 L 274,60 L 258,98 Z" fill="#7CF0C0" style={{ transformOrigin: '268px 78px' }} />
+        {/* J letter */}
+        <path d="M 152,243 Q 152,265 175,265 Q 198,265 198,243 L 198,140"
+          fill="none" stroke="url(#al-jg)" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
+        {/* P letter */}
+        <path d="M 218,278 L 218,138 Q 268,138 268,176 Q 268,214 218,214"
+          fill="none" stroke="url(#al-pg)" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Checkmark */}
+        <path d="M 222,270 L 236,286 L 268,252"
+          fill="none" stroke="#18A8A0" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
 }
 
 export function AnimatedLogo({
@@ -28,57 +76,74 @@ export function AnimatedLogo({
 }: AnimatedLogoProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playedRef = useRef(false);
+  // Small sizes always render static — no GSAP attempt.
+  // Large sizes start dynamic, may fall back to static if GSAP fails.
+  const isSmallSize = size < 120;
+  const [gsapFailed, setGsapFailed] = useState(false);
 
   useEffect(() => {
+    // For small icon sizes, render static — no animation needed
+    if (isSmallSize) return;
     if (!containerRef.current) return;
     if (playOnce && playedRef.current) return;
     playedRef.current = true;
 
-    // Dynamically load GSAP + CustomEase
+    let cancelled = false;
     let tl: any = null;
 
-    import('https://esm.sh/gsap@3.12.5').then(async (gsapModule) => {
-      const gsap = gsapModule.default || gsapModule;
-      try {
-        const customEaseModule = await import('https://esm.sh/gsap@3.12.5/CustomEase');
-        const CustomEase = customEaseModule.CustomEase || customEaseModule.default?.CustomEase;
-        if (CustomEase) gsap.registerPlugin(CustomEase);
-        if (CustomEase) CustomEase.create('apple', 'M0,0 C0.22,1 0.36,1 1,1');
-      } catch { /* CustomEase optional */ }
+    // Load GSAP from cdnjs (works with Turbopack; esm.sh doesn't)
+    async function loadGSAP() {
+      if (!(window as any).gsap) {
+        await new Promise<void>((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js';
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error('GSAP CDN failed'));
+          document.head.appendChild(s);
+        });
+      }
+      if (!(window as any).CustomEase) {
+        await new Promise<void>((resolve) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/CustomEase.min.js';
+          s.onload = () => resolve();
+          s.onerror = () => resolve();
+          document.head.appendChild(s);
+        });
+      }
+    }
 
+    loadGSAP().then(() => {
+      if (cancelled) return;
+      const gsap = (window as any).gsap;
+      const CE = (window as any).CustomEase;
+      if (CE) { gsap.registerPlugin(CE); CE.create('apple', 'M0,0 C0.22,1 0.36,1 1,1'); }
       gsap.ticker.fps(60);
       gsap.defaults({ ease: 'apple' in gsap ? 'apple' : 'power3.out' });
 
       const el = containerRef.current;
       if (!el) return;
 
-      // Get SVG elements
       const $ = (id: string) => el.querySelector(`#${id}`) as Element | null;
-
       const circle = $('circle');
+      if (!circle) return;
+
       const circleGlow = $('circleGlow');
       const arrowShaft = $('arrowShaft');
       const arrowHead = $('arrowHead');
       const jLetter = $('jLetter');
       const pLetter = $('pLetter');
       const pClipRect = $('pClipRect');
-      const line1 = $('line1');
-      const line2 = $('line2');
-      const line3 = $('line3');
+      const line1 = $('line1'), line2 = $('line2'), line3 = $('line3');
       const checkmark = $('checkmark');
       const brandText = $('brandText');
-      const sweepGlow = $('sweepGlow');
-      const sweepGlow2 = $('sweepGlow2');
+      const sweepGlow = $('sweepGlow'), sweepGlow2 = $('sweepGlow2');
 
-      if (!circle) return;
-
-      // Measure path lengths
       const circleLen = (circle as SVGPathElement).getTotalLength();
-      const arrowLen = (arrowShaft as SVGPathElement)?.getTotalLength() ?? 100;
-      const jLen = (jLetter as SVGPathElement)?.getTotalLength() ?? 150;
-      const checkLen = (checkmark as SVGPathElement)?.getTotalLength() ?? 60;
+      const arrowLen = arrowShaft ? (arrowShaft as SVGPathElement).getTotalLength() : 100;
+      const jLen = jLetter ? (jLetter as SVGPathElement).getTotalLength() : 150;
+      const checkLen = checkmark ? (checkmark as SVGPathElement).getTotalLength() : 60;
 
-      // Set initial states
       [circle, circleGlow, sweepGlow, sweepGlow2].forEach((el2) => {
         if (el2) {
           (el2 as SVGPathElement).style.strokeDasharray = String(circleLen);
@@ -113,58 +178,47 @@ export function AnimatedLogo({
       gsap.set([line1, line2, line3], { x: -15 });
       gsap.set(pClipRect, { attr: { width: 0 } });
 
-      // Build timeline
       tl = gsap.timeline({ id: 'julyPlanLogo' });
-
-      // Scene 1: Circle draws (0 → 1.2s)
       tl.to(circle, { strokeDashoffset: 0, duration: 1.2, ease: 'power2.inOut' }, 0)
         .to(circleGlow, { opacity: 0.18, duration: 0.35, ease: 'power2.out' }, 0.8);
-
-      // Scene 2: Arrow shaft draws + head pops (0.9 → 1.5s)
       tl.to(arrowShaft, { strokeDashoffset: 0, duration: 0.55, ease: 'power2.inOut' }, 0.9)
         .to(arrowHead, { opacity: 1, scale: 1, duration: 0.25, ease: 'back.out(2.5)' }, 1.35)
         .to(arrowHead, { scale: 0.97, duration: 0.08, ease: 'power2.out' }, 1.40)
         .to(arrowHead, { scale: 1.0, duration: 0.10, ease: 'power2.inOut' }, 1.48);
-
-      // Scene 3: J draws + P reveals (1.5 → 2.8s)
       tl.to(jLetter, { strokeDashoffset: 0, duration: 0.7, ease: 'power2.inOut' }, 1.5)
         .to(pClipRect, { attr: { width: 90 }, duration: 0.55, ease: 'power2.out' }, 2.2);
-
-      // Scene 4: Progress lines slide in (2.5 → 3.0s)
       tl.to(line1, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.5)
         .to(line2, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.65)
         .to(line3, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.8);
-
-      // Scene 5: Checkmark bounce (3.0 → 3.5s)
       tl.to(checkmark, { opacity: 1, scale: 1, duration: 0.2, ease: 'back.out(2)' }, 3.0)
         .to(checkmark, { strokeDashoffset: 0, duration: 0.25, ease: 'power2.inOut' }, 3.05)
         .to(checkmark, { scale: 0.95, duration: 0.10, ease: 'power2.out' }, 3.30)
         .to(checkmark, { scale: 1.00, duration: 0.16, ease: 'elastic.out(1, 0.55)' }, 3.40);
-
-      // Scene 6: Brand text fades in (3.5 → 4.2s)
       tl.to(brandText, { opacity: 1, duration: 0.5, ease: 'power2.out' }, 3.5)
         .to(brandText, { y: 0, duration: 0.7, ease: 'power3.out' }, 3.5)
         .to(brandText, { attr: { 'letter-spacing': 6 }, duration: 0.9, ease: 'power3.out' }, 3.5);
-
-      // Scene 7: Sweep glow (4.2 → 4.75s)
       tl.set([sweepGlow, sweepGlow2], { strokeDashoffset: circleLen }, 4.2)
         .to(sweepGlow2, { opacity: 0.35, duration: 0.1, ease: 'power2.out' }, 4.2)
         .to(sweepGlow, { opacity: 0.55, duration: 0.1, ease: 'power2.out' }, 4.2)
         .to([sweepGlow, sweepGlow2], { strokeDashoffset: -sweepSeg, duration: 0.55, ease: 'none' }, 4.2)
         .to([sweepGlow, sweepGlow2], { opacity: 0, duration: 0.2, ease: 'power2.in' }, 4.6);
-
-      // Fade out circle glow
       tl.to(circleGlow, { opacity: 0, duration: 0.4, ease: 'power2.in' }, 4.2);
-    }).catch((e) => {
-      console.warn('[AnimatedLogo] GSAP load failed:', e);
+    }).catch(() => {
+      // GSAP failed to load — fall back to static
+      setGsapFailed(true);
     });
 
     return () => {
+      cancelled = true;
       if (tl) tl.kill();
     };
-  }, [playOnce]);
+  }, [playOnce, isSmallSize]);
 
-  // Hide text for small sizes
+  // Static mode — small size OR GSAP load failure
+  if (isSmallSize || gsapFailed) {
+    return <StaticLogo size={size} showText={showText} />;
+  }
+
   const shouldShowText = showText && size >= 120;
 
   return (
@@ -173,7 +227,7 @@ export function AnimatedLogo({
       className={className}
       style={{
         width: size,
-        height: size * (480 / 400),  // maintain aspect ratio
+        height: size * (480 / 400),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
