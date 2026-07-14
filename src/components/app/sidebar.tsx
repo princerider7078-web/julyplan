@@ -20,9 +20,7 @@ export type ViewKey =
   | 'reports' | 'settings'
   | 'ai-chat' | 'ai-planner' | 'ai-reports'
   | 'journal' | 'knowledge' | 'dev'
-  // V3 new views
   | 'memory' | 'briefing' | 'notifications' | 'history'
-  // V4 new views
   | 'notif-prefs' | 'recovery';
 
 interface NavItem {
@@ -34,29 +32,25 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  // Main
-  { key: 'dashboard', label: 'Dashboard',  icon: LayoutDashboard, group: 'main' },
-  { key: 'today',     label: 'Today Plan', icon: ListChecks, badge: 'count', group: 'main' },
-  { key: 'tasks',     label: 'Tasks',      icon: FolderTree, group: 'main' },
-  { key: 'sections',  label: 'Sections',   icon: SectionIcon as unknown as typeof LayoutDashboard, group: 'main' },
-  // Life
-  { key: 'routine',   label: 'Daily Routine', icon: Sunrise, group: 'life' },
-  { key: 'habits',    label: 'Habits',     icon: Repeat, badge: 'streak', group: 'life' },
-  { key: 'finance',   label: 'Finance',    icon: Wallet, group: 'life' },
-  { key: 'monthly',   label: 'July Plan',  icon: CalendarDays, badge: 'wasted', group: 'life' },
-  { key: 'journal',   label: 'Journal',    icon: BookOpen, group: 'life' },
-  { key: 'knowledge', label: 'Knowledge',  icon: BookMarked, group: 'life' },
-  // AI Brain
+  { key: 'dashboard', label: 'Home',        icon: LayoutDashboard, group: 'main' },
+  { key: 'today',     label: 'Today',       icon: ListChecks, badge: 'count', group: 'main' },
+  { key: 'tasks',     label: 'Tasks',       icon: FolderTree, group: 'main' },
+  { key: 'sections',  label: 'Sections',    icon: SectionIcon as unknown as typeof LayoutDashboard, group: 'main' },
+  { key: 'routine',   label: 'Routine',     icon: Sunrise, group: 'life' },
+  { key: 'habits',    label: 'Habits',      icon: Repeat, badge: 'streak', group: 'life' },
+  { key: 'finance',   label: 'Finance',     icon: Wallet, group: 'life' },
+  { key: 'monthly',   label: 'July Plan',   icon: CalendarDays, badge: 'wasted', group: 'life' },
+  { key: 'journal',   label: 'Journal',     icon: BookOpen, group: 'life' },
+  { key: 'knowledge', label: 'Notes',       icon: BookMarked, group: 'life' },
   { key: 'ai-chat',    label: 'AI Assistant', icon: Brain, group: 'ai' },
-  { key: 'briefing',   label: 'Daily Briefing', icon: Coffee, group: 'ai' },
-  { key: 'ai-planner', label: 'AI Planner',   icon: Sparkles, group: 'ai' },
-  { key: 'memory',     label: 'AI Memory',     icon: Brain, badge: 'memories', group: 'ai' },
-  { key: 'notifications', label: 'Notifications', icon: Bell, badge: 'pending', group: 'ai' },
-  { key: 'notif-prefs',label: 'Notif Preferences', icon: Bell, group: 'ai' },
-  { key: 'recovery',   label: 'Recovery Queue', icon: RotateCcw, badge: 'recovery', group: 'ai' },
-  { key: 'ai-reports', label: 'AI Reports',   icon: FileText, group: 'ai' },
-  { key: 'history',    label: 'Chat History', icon: MessageCircle, group: 'ai' },
-  // System
+  { key: 'briefing',   label: 'Briefing',     icon: Coffee, group: 'ai' },
+  { key: 'ai-planner', label: 'Planner',      icon: Sparkles, group: 'ai' },
+  { key: 'memory',     label: 'Memory',       icon: Brain, badge: 'memories', group: 'ai' },
+  { key: 'notifications', label: 'Alerts',     icon: Bell, badge: 'pending', group: 'ai' },
+  { key: 'notif-prefs',label: 'Alert Settings',icon: Bell, group: 'ai' },
+  { key: 'recovery',   label: 'Recovery',     icon: RotateCcw, badge: 'recovery', group: 'ai' },
+  { key: 'ai-reports', label: 'Reports',      icon: FileText, group: 'ai' },
+  { key: 'history',    label: 'Chat Log',     icon: MessageCircle, group: 'ai' },
   { key: 'reports',   label: 'Analytics',  icon: BarChart3, group: 'system' },
   { key: 'dev',       label: 'AI Controls', icon: Cpu, group: 'system' },
   { key: 'settings',  label: 'Settings',   icon: Settings, group: 'system' },
@@ -64,8 +58,8 @@ const NAV: NavItem[] = [
 
 const GROUP_LABELS: Record<NavItem['group'], string> = {
   main: 'Main',
-  life: 'Life Modules',
-  ai: 'AI Brain',
+  life: 'Life',
+  ai: 'AI',
   system: 'System',
 };
 
@@ -85,31 +79,17 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   const { profile, isOffline, signOut } = useAuth();
   const today = todayISO();
 
-  // Today's pending count
   const todayPending = tasks.filter(
     (t) => t.status !== 'archived' && t.repeatRule !== 'none' && !t.completionLog?.[today],
   ).length + tasks.filter(
     (t) => t.status === 'pending' && t.repeatRule === 'none' && !t.completionLog?.[today],
   ).length;
 
-  // Active memory count
   const activeMemories = memories.filter((m) => !m.archived && !m.disabled).length;
-
-  // Pending notifications (from notification log, not in-app store)
-  const [pendingNotifCount, setPendingNotifCount] = useState(0);
-  useEffect(() => {
-    import('@/lib/notifications/service').then(({ getNotificationLog }) => {
-      const log = getNotificationLog();
-      const recent = log.filter((e) => !e.action).slice(0, 99).length;
-      setPendingNotifCount(recent);
-    });
-  }, [notifications]);
-
-  // Recovery queue count
+  const pendingNotifCount = notifications.filter((n) => n.status === 'pending').length;
   const recoveryQueue = useStore((s) => s.recoveryQueue);
   const recoveryCount = recoveryQueue.length;
 
-  // Current habit streak (best of all habits)
   function getStreak(log: Record<string, boolean> | undefined) {
     if (!log) return 0;
     let streak = 0;
@@ -122,7 +102,6 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   }
   const bestStreak = Math.max(0, ...habits.map((h) => getStreak(h.log)));
 
-  // Missed days this month — count days where <30% of habits done
   function getMonthWasted() {
     const day = new Date().getDate();
     let wasted = 0;
@@ -138,15 +117,22 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
   }
   const wasted = getMonthWasted();
 
-  // Group nav items
+  const [pendingNotifCountState, setPendingNotifCountState] = useState(0);
+  useEffect(() => {
+    import('@/lib/notifications/service').then(({ getNotificationLog }) => {
+      const log = getNotificationLog();
+      const recent = log.filter((e) => !e.action).slice(0, 99).length;
+      setPendingNotifCountState(recent);
+    });
+  }, [notifications]);
+
   const groups: NavItem['group'][] = ['main', 'life', 'ai', 'system'];
 
   return (
     <>
-      {/* Mobile backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
           onClick={onMobileClose}
           aria-hidden="true"
         />
@@ -154,25 +140,25 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
       <aside
         className={cn(
           'fixed md:sticky top-0 left-0 z-50 md:z-auto',
-          'h-screen md:h-screen w-72 shrink-0',
-          'bg-sidebar text-sidebar-foreground border-r border-sidebar-border',
-          'flex flex-col transition-transform duration-300',
+          'h-screen w-[260px] shrink-0',
+          'glass border-r border-sidebar-border',
+          'flex flex-col transition-transform duration-300 ease-out',
           mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         )}
       >
         {/* Brand */}
         <div className="flex items-center justify-between px-5 h-16 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
-            <AnimatedLogo size={36} showText={false} className="shrink-0" />
+            <AnimatedLogo size={32} showText={false} className="shrink-0" />
             <div className="leading-tight">
-              <div className="font-bold text-sm">July Plan</div>
+              <div className="font-bold text-sm tracking-tight">July Plan</div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Personal AI OS
               </div>
             </div>
           </div>
           <button
-            className="md:hidden p-1 rounded hover:bg-sidebar-accent"
+            className="md:hidden p-1.5 rounded-lg hover:bg-sidebar-accent transition-colors"
             onClick={onMobileClose}
             aria-label="Close sidebar"
           >
@@ -180,9 +166,9 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
           </button>
         </div>
 
-        {/* User badge (auth status) */}
+        {/* User badge */}
         {profile && (
-          <div className="px-4 py-2 border-b border-sidebar-border flex items-center gap-2">
+          <div className="px-4 py-2.5 border-b border-sidebar-border flex items-center gap-2">
             <div className={cn(
               'h-2 w-2 rounded-full',
               isOffline ? 'bg-amber-500' : 'bg-emerald-500',
@@ -193,14 +179,14 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
           </div>
         )}
 
-        {/* Nav (grouped) */}
-        <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-4 space-y-4">
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-3 space-y-4">
           {groups.map((group) => {
             const items = NAV.filter((n) => n.group === group);
             if (items.length === 0) return null;
             return (
-              <div key={group} className="space-y-1">
-                <div className="px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+              <div key={group} className="space-y-0.5">
+                <div className="px-3 text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
                   {GROUP_LABELS[group]}
                 </div>
                 {items.map((item) => {
@@ -209,16 +195,15 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
                   let badge: React.ReactNode = null;
                   if (item.badge === 'count' && todayPending > 0) {
                     badge = (
-                      <span className="ml-auto text-xs bg-primary/15 text-primary rounded-full px-2 py-0.5 font-medium">
+                      <span className="ml-auto text-[10px] bg-primary/15 text-primary rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center font-semibold">
                         {todayPending}
                       </span>
                     );
                   }
                   if (item.badge === 'streak' && bestStreak > 0) {
                     badge = (
-                      <span className="ml-auto text-xs flex items-center gap-1 text-orange-500 font-medium">
-                        <Flame className="h-3.5 w-3.5" />
-                        {bestStreak}
+                      <span className="ml-auto text-[10px] flex items-center gap-0.5 text-orange-500 font-semibold">
+                        <Flame className="h-3 w-3" />{bestStreak}
                       </span>
                     );
                   }
@@ -226,7 +211,7 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
                     const danger = wasted >= settings.maxWastedDays;
                     badge = (
                       <span className={cn(
-                        'ml-auto text-xs rounded-full px-2 py-0.5 font-medium',
+                        'ml-auto text-[10px] rounded-full px-2 py-0.5 font-semibold',
                         danger ? 'bg-red-500/20 text-red-500' : 'bg-muted text-muted-foreground',
                       )}>
                         {wasted}/{settings.maxWastedDays}
@@ -235,21 +220,21 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
                   }
                   if (item.badge === 'memories' && activeMemories > 0) {
                     badge = (
-                      <span className="ml-auto text-xs bg-violet-500/15 text-violet-500 rounded-full px-2 py-0.5 font-medium">
+                      <span className="ml-auto text-[10px] bg-violet-500/15 text-violet-500 rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center font-semibold">
                         {activeMemories}
                       </span>
                     );
                   }
-                  if (item.badge === 'pending' && pendingNotifCount > 0) {
+                  if (item.badge === 'pending' && pendingNotifCountState > 0) {
                     badge = (
-                      <span className="ml-auto text-xs bg-red-500/15 text-red-500 rounded-full px-2 py-0.5 font-medium">
-                        {pendingNotifCount}
+                      <span className="ml-auto text-[10px] bg-red-500/15 text-red-500 rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center font-semibold">
+                        {pendingNotifCountState}
                       </span>
                     );
                   }
                   if (item.badge === 'recovery' && recoveryCount > 0) {
                     badge = (
-                      <span className="ml-auto text-xs bg-orange-500/15 text-orange-500 rounded-full px-2 py-0.5 font-medium">
+                      <span className="ml-auto text-[10px] bg-orange-500/15 text-orange-500 rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center font-semibold">
                         {recoveryCount}
                       </span>
                     );
@@ -259,17 +244,17 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
                       key={item.key}
                       onClick={() => { onNavigate(item.key); onMobileClose(); }}
                       className={cn(
-                        'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium',
-                        'transition-colors',
+                        'w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium',
+                        'transition-all duration-200',
                         active
-                          ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
-                          : 'hover:bg-sidebar-accent text-sidebar-foreground/80 hover:text-sidebar-foreground',
+                          ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20'
+                          : 'hover:bg-sidebar-accent text-sidebar-foreground/70 hover:text-sidebar-foreground',
                       )}
                     >
                       {item.key === 'sections' ? (
-                        <SectionIcon name="FolderTree" className="h-4 w-4" />
+                        <SectionIcon name="FolderTree" className="h-[18px] w-[18px]" />
                       ) : (
-                        <Icon className="h-4 w-4" />
+                        <Icon className="h-[18px] w-[18px]" />
                       )}
                       <span>{item.label}</span>
                       {badge}
@@ -281,7 +266,7 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
           })}
         </nav>
 
-        {/* Footer: monthly progress + sign out */}
+        {/* Footer */}
         <div className="border-t border-sidebar-border p-4 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">July Progress</span>
@@ -292,13 +277,13 @@ export function Sidebar({ current, onNavigate, mobileOpen, onMobileClose }: Side
           <Progress value={(new Date().getDate() / 31) * 100} className="h-1.5" />
           {wasted >= settings.maxWastedDays && (
             <Badge variant="destructive" className="w-full justify-center text-[10px]">
-              Missed-day limit reached — recover today
+              Missed-day limit reached
             </Badge>
           )}
           {profile && (
             <button
               onClick={() => signOut()}
-              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
             >
               <LogOut className="h-3.5 w-3.5" />
               Sign out {isOffline ? '(exit offline)' : ''}
