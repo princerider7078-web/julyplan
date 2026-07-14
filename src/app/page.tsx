@@ -38,6 +38,7 @@ import { Menu, Plus, Bell, Loader2 } from 'lucide-react';
 import { todayISO, formatDateLong } from '@/lib/utils';
 import { SyncIndicator } from '@/components/app/sync-indicator';
 import { PageTransition } from '@/components/app/animations';
+import { LaunchAnimation } from '@/components/app/launch-animation';
 import { getNotificationLog } from '@/lib/notifications/service';
 
 export default function Home() {
@@ -132,24 +133,30 @@ export default function Home() {
     if (!wasDone) playCompleteSound();
   }
 
-  // ---------- Loading state ----------
+  // ---------- Launch animation (first load only) ----------
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <img src="/logo.png" alt="July Plan" className="h-16 w-16 rounded-2xl shadow-lg shadow-orange-500/30" />
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading July Plan…
+      <LaunchAnimation>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-center space-y-4">
+            <img src="/logo.png" alt="July Plan" className="h-16 w-16 rounded-2xl shadow-lg shadow-orange-500/30" />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading July Plan…
+            </div>
           </div>
         </div>
-      </div>
+      </LaunchAnimation>
     );
   }
 
   // ---------- Auth gate ----------
   if (!profile) {
-    return <LoginScreen />;
+    return (
+      <LaunchAnimation>
+        <LoginScreen />
+      </LaunchAnimation>
+    );
   }
 
   const today = todayISO();
