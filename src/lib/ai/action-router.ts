@@ -37,8 +37,9 @@ export interface ActionResult {
 // ─── Fuzzy match helpers (reused across domains) ───
 
 function findByQuery<T extends { id: string; title: string }>(
-  list: T[], query: string,
+  list: T[], query: string | undefined | null,
 ): T | null {
+  if (!query || typeof query !== 'string') return null;
   const q = query.toLowerCase().trim();
   if (!q) return null;
 
