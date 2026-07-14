@@ -22,7 +22,7 @@ import { SyncIndicator } from '@/components/app/sync-indicator';
 import {
   Sun, Moon, Monitor, Download, Upload, RotateCcw, Bell, Volume2,
   Droplet, Beef, AlertTriangle, CalendarX, RefreshCw, Cloud,
-  Palette, Sparkles, Check,
+  Palette, Sparkles, Check, Server, Link,
 } from 'lucide-react';
 
 export function SettingsView() {
@@ -289,6 +289,64 @@ export function SettingsView() {
               onCheckedChange={(v) => updateSettings({ soundEnabled: v })}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* AI Backend — default Vercel URL + manual override */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Server className="h-4 w-4 text-primary" />
+            AI Backend
+          </CardTitle>
+          <CardDescription>
+            Server that powers AI chat, planning, and memory
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2 block">Backend URL</Label>
+            <Input
+              value={settings.aiBackendUrl ?? ''}
+              onChange={(e) => updateSettings({ aiBackendUrl: e.target.value.trim() })}
+              placeholder="https://your-deployment.vercel.app"
+              className="text-sm font-mono"
+            />
+            {settings.aiBackendUrl ? (
+              <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1 break-all">
+                <Link className="h-3 w-3 shrink-0" />
+                <span>Will call: {settings.aiBackendUrl.replace(/\/$/, '')}/api/ai</span>
+              </p>
+            ) : (
+              <p className="text-[11px] text-amber-500 mt-1.5 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Empty — AI will use relative /api/ai (works on web, not APK)
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => updateSettings({ aiBackendUrl: 'https://julyplan.vercel.app' })}
+              className="flex-1"
+            >
+              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+              Use default
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => updateSettings({ aiBackendUrl: '' })}
+              className="flex-1"
+            >
+              Clear
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Default is <code className="bg-muted px-1 rounded text-[10px]">https://julyplan.vercel.app</code>.
+            The APK needs a full URL since it runs offline from a WebView. Change this only if you self-host.
+          </p>
         </CardContent>
       </Card>
 

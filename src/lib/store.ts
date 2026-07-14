@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiTemperature: 0.7,
   aiMaxTokens: 1500,
   aiEnabledModules: ['tasks', 'habits', 'health', 'finance', 'journal'],
-  aiBackendUrl: '',
+  aiBackendUrl: 'https://julyplan.vercel.app',
   // V4.1: auto-fire notifications when task time arrives
   autoTaskNotifications: true,
   taskNotificationLeadMinutes: 0,  // 0 = fire exactly at task time
