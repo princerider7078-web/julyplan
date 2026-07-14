@@ -6,46 +6,53 @@ const LAUNCH_KEY = 'july-plan-launch-shown';
 const ANIMATION_DURATION = 5200;
 
 export function LaunchAnimation({ children }: { children: React.ReactNode }) {
-  const [showAnimation, setShowAnimation] = useState(false);
-  const [animationComplete, setAnimationComplete] = useState(false);
+  const [phase, setPhase] = useState<'checking' | 'playing' | 'done'>('checking');
 
   useEffect(() => {
-    const shown = sessionStorage.getItem(LAUNCH_KEY);
-
     queueMicrotask(() => {
-      if (!shown) {
-        const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (prefersReduced) {
-          sessionStorage.setItem(LAUNCH_KEY, '1');
-          setAnimationComplete(true);
-          return;
-        }
-
-        setShowAnimation(true);
-        sessionStorage.setItem(LAUNCH_KEY, '1');
-
-        setTimeout(() => {
-          setAnimationComplete(true);
-        }, ANIMATION_DURATION);
-      } else {
-        setAnimationComplete(true);
+      const shown = sessionStorage.getItem(LAUNCH_KEY);
+      if (shown) {
+        setPhase('done');
+        return;
       }
+
+      const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (prefersReduced) {
+        sessionStorage.setItem(LAUNCH_KEY, '1');
+        setPhase('done');
+        return;
+      }
+
+      // Show animation
+      sessionStorage.setItem(LAUNCH_KEY, '1');
+      setPhase('playing');
+
+      // Auto-hide after animation
+      setTimeout(() => {
+        setPhase('done');
+      }, ANIMATION_DURATION);
     });
   }, []);
 
-  if (animationComplete || !showAnimation) {
-    return <>{children}</>;
+  // While checking or playing, show ONLY the animation (not children)
+  if (phase === 'checking' || phase === 'playing') {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-black flex items-center justify-center">
+        {phase === 'playing' ? (
+          <AnimatedLogo size={Math.min(560, (typeof window !== 'undefined' ? window.innerWidth : 560) * 0.9)} showText={true} />
+        ) : (
+          <div className="h-20 w-20" />
+        )}
+        <button
+          onClick={() => setPhase('done')}
+          className="absolute bottom-6 right-6 text-white/40 hover:text-white/70 text-xs uppercase tracking-wider transition-colors"
+        >
+          Skip →
+        </button>
+      </div>
+    );
   }
 
-  return (
-    <div className="fixed inset-0 z-[9999] bg-black flex items-center justify-center">
-      <AnimatedLogo size={Math.min(560, window.innerWidth * 0.9)} showText={true} />
-      <button
-        onClick={() => setAnimationComplete(true)}
-        className="absolute bottom-6 right-6 text-white/40 hover:text-white/70 text-xs uppercase tracking-wider transition-colors"
-      >
-        Skip →
-      </button>
-    </div>
-  );
+  // Animation done — render children
+  return <>{children}</>;
 }

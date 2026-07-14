@@ -134,7 +134,7 @@ export default function Home() {
     if (!wasDone) playCompleteSound();
   }
 
-  // ---------- Launch animation (first load only) ----------
+  // ---------- Loading state ----------
   if (loading) {
     return (
       <LaunchAnimation>
