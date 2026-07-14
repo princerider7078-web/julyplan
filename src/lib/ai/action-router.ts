@@ -354,6 +354,15 @@ CRITICAL RULES:
 3. If needs_confirmation is false AND actions is empty, it's pure conversation.
 4. "actions" must ALWAYS contain the full action objects even when needs_confirmation is true — they will be executed when the user confirms.
 
+ACTION FORMAT — every action MUST have domain, action, and params:
+{ "domain": "task", "action": "delete_task", "params": { "task_ref": "task name" } }
+{ "domain": "habit", "action": "add_habit", "params": { "title": "habit name", "category": "General" } }
+{ "domain": "finance", "action": "add_finance_entry", "params": { "entry_type": "expense", "amount": 200, "category": "Food", "entry_date": "2026-07-14" } }
+{ "domain": "memory", "action": "remember", "params": { "category": "health", "key": "allergy", "value": "peanuts", "importance": "high" } }
+
+NEVER omit "domain" — it is required. Each action MUST look like:
+{"domain": "<domain>", "action": "<action_name>", "params": {...}}
+
 Available actions:
 - task: add_task, edit_task, complete_task, uncomplete_task, delete_task, move_task, duplicate_task, archive_task, show_tasks
 - habit: add_habit, delete_habit, mark_habit_complete, mark_habit_incomplete, check_streak, show_habits
@@ -412,9 +421,16 @@ export async function parseWithAI(
 
     if (json && typeof json === 'object') {
       const obj = json as Partial<ActionEnvelope>;
+      // Normalize actions: ensure domain field exists on each action
+      const rawActions = Array.isArray(obj.actions) ? obj.actions as AppAction[] : [];
+      const normalizedActions = rawActions.map((a) => ({
+        domain: a.domain || inferDomain(a.action),
+        action: a.action,
+        params: a.params || {},
+      }));
       return {
         reply: obj.reply ?? response.text ?? '',
-        actions: Array.isArray(obj.actions) ? obj.actions as AppAction[] : [],
+        actions: normalizedActions,
         needs_confirmation: obj.needs_confirmation ?? false,
         confirmation_question: obj.confirmation_question ?? null,
       };
@@ -437,11 +453,63 @@ export async function parseWithAI(
   }
 }
 
+// ─── Infer domain from action name (when AI forgets to include domain) ───
+
+function inferDomain(actionName: string): Domain {
+  if (actionName.startsWith('add_task') || actionName.startsWith('edit_task') ||
+      actionName.startsWith('complete_task') || actionName.startsWith('delete_task') ||
+      actionName.startsWith('move_task') || actionName.startsWith('show_tasks') ||
+      actionName.startsWith('archive_task') || actionName.startsWith('duplicate_task') ||
+      actionName.startsWith('uncomplete_task')) return 'task';
+
+  if (actionName.startsWith('add_habit') || actionName.startsWith('delete_habit') ||
+      actionName.startsWith('mark_habit') || actionName.startsWith('check_streak') ||
+      actionName.startsWith('show_habits')) return 'habit';
+
+  if (actionName.startsWith('mark_routine') || actionName.startsWith('update_routine') ||
+      actionName.startsWith('generate_plan') || actionName.startsWith('show_routine')) return 'routine';
+
+  if (actionName.startsWith('add_journal') || actionName.startsWith('edit_journal') ||
+      actionName.startsWith('summarize_journal') || actionName.startsWith('show_journal')) return 'journal';
+
+  if (actionName.startsWith('add_finance') || actionName.startsWith('edit_finance') ||
+      actionName.startsWith('delete_finance') || actionName.startsWith('set_finance') ||
+      actionName.startsWith('show_finance')) return 'finance';
+
+  if (actionName.startsWith('add_knowledge') || actionName.startsWith('edit_knowledge') ||
+      actionName.startsWith('delete_knowledge') || actionName.startsWith('search_knowledge') ||
+      actionName.startsWith('summarize_knowledge')) return 'knowledge';
+
+  if (actionName === 'remember' || actionName === 'forget' || actionName.startsWith('search_memory') ||
+      actionName.startsWith('show_memories') || actionName.startsWith('pin_memory') ||
+      actionName.startsWith('favorite_memory') || actionName.startsWith('archive_memory') ||
+      actionName.startsWith('lock_memory') || actionName.startsWith('merge_duplicate')) return 'memory';
+
+  if (actionName.startsWith('create_notification') || actionName.startsWith('snooze_notification') ||
+      actionName.startsWith('cancel_notification') || actionName.startsWith('update_notification')) return 'notification';
+
+  if (actionName.startsWith('update_theme') || actionName.startsWith('update_daily') ||
+      actionName.startsWith('export_backup') || actionName.startsWith('import_backup') ||
+      actionName.startsWith('reset_app')) return 'settings';
+
+  if (actionName.startsWith('navigate_to')) return 'navigation';
+
+  if (actionName.startsWith('generate_report') || actionName.startsWith('show_analytics')) return 'report';
+
+  return 'task'; // default
+}
+
 // ─── Execute actions against the store ───
 
 export function executeAppAction(action: AppAction): ActionResult {
   const store = useStore.getState();
   const today = new Date().toISOString().slice(0, 10);
+
+  // Fix: infer domain if AI forgot to include it
+  if (!action.domain) {
+    action.domain = inferDomain(action.action);
+  }
+
   const key = `${action.domain}.${action.action}`;
 
   switch (key) {
