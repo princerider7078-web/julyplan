@@ -2,10 +2,12 @@
 import { useEffect, useState } from 'react';
 
 const LAUNCH_KEY = 'july-plan-launch-shown';
-const ANIMATION_DURATION = 5500; // slightly more than the 5.05s animation + fade
+const ANIMATION_DURATION = 5500;
+const IFRAME_LOAD_TIMEOUT = 4000; // if iframe doesn't load in 4s, skip
 
 export function LaunchAnimation({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<'checking' | 'playing' | 'done'>('checking');
+  const [iframeLoaded, setIframeLoaded] = useState(false);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -22,18 +24,28 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Show animation
       sessionStorage.setItem(LAUNCH_KEY, '1');
       setPhase('playing');
 
+      // Safety: if iframe doesn't load in 4s, skip animation
+      const loadTimer = setTimeout(() => {
+        if (!iframeLoaded) {
+          setPhase('done');
+        }
+      }, IFRAME_LOAD_TIMEOUT);
+
       // Auto-hide after animation completes
-      setTimeout(() => {
+      const animTimer = setTimeout(() => {
         setPhase('done');
       }, ANIMATION_DURATION);
-    });
-  }, []);
 
-  // While checking or playing, show ONLY the animation HTML (not children)
+      return () => {
+        clearTimeout(loadTimer);
+        clearTimeout(animTimer);
+      };
+    });
+  }, [iframeLoaded]);
+
   if (phase === 'checking' || phase === 'playing') {
     return (
       <div className="fixed inset-0 z-[9999] bg-black flex items-center justify-center">
@@ -43,7 +55,15 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
             className="w-full h-full border-0"
             title="July Plan Logo Animation"
             allow="accelerometer"
+            onLoad={() => setIframeLoaded(true)}
+            // If iframe fails to load, the safety timeout will catch it
           />
+        )}
+        {/* Show static logo while iframe loads */}
+        {!iframeLoaded && phase === 'playing' && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-white/60 text-sm animate-pulse">Loading July Plan…</div>
+          </div>
         )}
         {/* Skip button */}
         <button
@@ -56,6 +76,5 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Animation done — render children
   return <>{children}</>;
 }
