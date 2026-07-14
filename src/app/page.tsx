@@ -181,7 +181,7 @@ export default function Home() {
   const meta = VIEW_META[view] ?? { title: 'July Plan' };
 
   return (
-    <>
+    <LaunchAnimation>
       <MobileShell
         current={view}
         onNavigate={setView}
@@ -221,6 +221,6 @@ export default function Home() {
       <NotificationToasts />
 
       <TaskDialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen} />
-    </>
+    </LaunchAnimation>
   );
 }

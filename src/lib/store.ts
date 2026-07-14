@@ -11,6 +11,7 @@ import type {
   ConversationSummary, AINotification,
   NotificationPreferences, LearningProfile, RecoveryItem,
   NotificationCategory, NotificationTone, NotificationAction,
+  AccentColorKey, AccentColorDef,
 } from './types';
 import {
   DEFAULT_SECTIONS, DEFAULT_HABITS, DEFAULT_ROUTINE,
@@ -19,6 +20,9 @@ import {
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
+  // V6: appearance controls
+  accentColor: 'amber',
+  gradientIntensity: 'medium',
   waterTarget: 3000,
   proteinTarget: 90,
   maxWastedDays: 2,
@@ -35,6 +39,52 @@ const DEFAULT_SETTINGS: AppSettings = {
   // V4.1: auto-fire notifications when task time arrives
   autoTaskNotifications: true,
   taskNotificationLeadMinutes: 0,  // 0 = fire exactly at task time
+};
+
+// V6: Accent color registry — all values in oklch for smooth theme switching
+export const ACCENT_COLORS: Record<AccentColorKey, AccentColorDef> = {
+  amber: {
+    key: 'amber', label: 'Amber',
+    light: { primary: 'oklch(0.68 0.18 50)', primaryForeground: 'oklch(0.99 0.003 80)', ring: 'oklch(0.68 0.18 50)', chart1: 'oklch(0.68 0.18 50)' },
+    dark:  { primary: 'oklch(0.75 0.17 55)', primaryForeground: 'oklch(0.20 0.04 55)', ring: 'oklch(0.75 0.17 55)', chart1: 'oklch(0.75 0.17 55)' },
+    gradient: { from: 'oklch(0.72 0.19 50)', to: 'oklch(0.62 0.22 25)' },
+  },
+  teal: {
+    key: 'teal', label: 'Teal',
+    light: { primary: 'oklch(0.62 0.13 195)', primaryForeground: 'oklch(0.99 0.003 195)', ring: 'oklch(0.62 0.13 195)', chart1: 'oklch(0.62 0.13 195)' },
+    dark:  { primary: 'oklch(0.72 0.13 195)', primaryForeground: 'oklch(0.18 0.03 195)', ring: 'oklch(0.72 0.13 195)', chart1: 'oklch(0.72 0.13 195)' },
+    gradient: { from: 'oklch(0.70 0.14 195)', to: 'oklch(0.60 0.16 230)' },
+  },
+  violet: {
+    key: 'violet', label: 'Violet',
+    light: { primary: 'oklch(0.58 0.20 290)', primaryForeground: 'oklch(0.99 0.003 290)', ring: 'oklch(0.58 0.20 290)', chart1: 'oklch(0.58 0.20 290)' },
+    dark:  { primary: 'oklch(0.68 0.19 295)', primaryForeground: 'oklch(0.18 0.03 295)', ring: 'oklch(0.68 0.19 295)', chart1: 'oklch(0.68 0.19 295)' },
+    gradient: { from: 'oklch(0.66 0.21 295)', to: 'oklch(0.58 0.22 330)' },
+  },
+  rose: {
+    key: 'rose', label: 'Rose',
+    light: { primary: 'oklch(0.62 0.21 15)', primaryForeground: 'oklch(0.99 0.003 15)', ring: 'oklch(0.62 0.21 15)', chart1: 'oklch(0.62 0.21 15)' },
+    dark:  { primary: 'oklch(0.72 0.19 15)', primaryForeground: 'oklch(0.18 0.03 15)', ring: 'oklch(0.72 0.19 15)', chart1: 'oklch(0.72 0.19 15)' },
+    gradient: { from: 'oklch(0.70 0.21 15)', to: 'oklch(0.62 0.22 350)' },
+  },
+  emerald: {
+    key: 'emerald', label: 'Emerald',
+    light: { primary: 'oklch(0.60 0.15 155)', primaryForeground: 'oklch(0.99 0.003 155)', ring: 'oklch(0.60 0.15 155)', chart1: 'oklch(0.60 0.15 155)' },
+    dark:  { primary: 'oklch(0.72 0.16 155)', primaryForeground: 'oklch(0.18 0.03 155)', ring: 'oklch(0.72 0.16 155)', chart1: 'oklch(0.72 0.16 155)' },
+    gradient: { from: 'oklch(0.70 0.17 155)', to: 'oklch(0.60 0.18 180)' },
+  },
+  sunset: {
+    key: 'sunset', label: 'Sunset',
+    light: { primary: 'oklch(0.65 0.20 35)', primaryForeground: 'oklch(0.99 0.003 35)', ring: 'oklch(0.65 0.20 35)', chart1: 'oklch(0.65 0.20 35)' },
+    dark:  { primary: 'oklch(0.74 0.18 40)', primaryForeground: 'oklch(0.18 0.03 40)', ring: 'oklch(0.74 0.18 40)', chart1: 'oklch(0.74 0.18 40)' },
+    gradient: { from: 'oklch(0.72 0.20 40)', to: 'oklch(0.62 0.22 10)' },
+  },
+  ocean: {
+    key: 'ocean', label: 'Ocean',
+    light: { primary: 'oklch(0.55 0.15 240)', primaryForeground: 'oklch(0.99 0.003 240)', ring: 'oklch(0.55 0.15 240)', chart1: 'oklch(0.55 0.15 240)' },
+    dark:  { primary: 'oklch(0.70 0.15 240)', primaryForeground: 'oklch(0.18 0.03 240)', ring: 'oklch(0.70 0.15 240)', chart1: 'oklch(0.70 0.15 240)' },
+    gradient: { from: 'oklch(0.68 0.16 240)', to: 'oklch(0.60 0.14 200)' },
+  },
 };
 
 // V4: Default notification preferences — smart, learning-enabled
@@ -718,7 +768,7 @@ export const useStore = create<Store>()(
     {
       name: 'july-plan-store',
       storage: createJSONStorage(() => localStorage),
-      version: 5,
+      version: 6,
       // Backfill missing fields from defaults — important when migrating
       // between V1 → V2 → V3 → V4 → V4.1 schemas.
       merge: (persisted, current) => {

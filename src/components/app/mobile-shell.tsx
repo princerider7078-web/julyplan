@@ -101,13 +101,16 @@ export function BottomNav({ current, onNavigate, onMore }: BottomNavProps) {
               <motion.span
                 layout
                 className={cn(
-                  'flex items-center justify-center h-8 w-14 rounded-full transition-colors',
-                  active && 'bg-primary/15',
+                  'flex items-center justify-center h-8 w-14 rounded-full transition-all',
+                  active && 'gradient-primary text-primary',
                 )}
               >
                 <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
               </motion.span>
-              <span className={cn('text-[10px] font-medium leading-none', active && 'font-semibold')}>
+              <span className={cn(
+                'text-[11px] font-medium leading-none transition-colors',
+                active ? 'font-bold text-primary' : 'text-muted-foreground',
+              )}>
                 {dest.label}
               </span>
               {badge}
@@ -127,13 +130,16 @@ export function BottomNav({ current, onNavigate, onMore }: BottomNavProps) {
           <motion.span
             layout
             className={cn(
-              'flex items-center justify-center h-8 w-14 rounded-full transition-colors',
-              isMoreActive && 'bg-primary/15',
+              'flex items-center justify-center h-8 w-14 rounded-full transition-all',
+              isMoreActive && 'gradient-primary text-primary',
             )}
           >
             <LayoutGrid className="h-5 w-5" strokeWidth={isMoreActive ? 2.5 : 2} />
           </motion.span>
-          <span className={cn('text-[10px] font-medium leading-none', isMoreActive && 'font-semibold')}>
+          <span className={cn(
+            'text-[11px] font-medium leading-none transition-colors',
+            isMoreActive ? 'font-bold text-primary' : 'text-muted-foreground',
+          )}>
             More
           </span>
         </button>
@@ -162,11 +168,13 @@ export function AppBar({ title, subtitle, onBellClick, unreadCount = 0, showLogo
       <div className="flex items-center justify-between h-14 px-3 gap-2">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {showLogo && (
-            <img
-              src="/logo.png"
-              alt="July Plan"
-              className="h-7 w-7 rounded-lg object-cover shrink-0"
-            />
+            <div className="h-8 w-8 rounded-xl gradient-primary-strong p-0.5 shrink-0 shadow-md">
+              <img
+                src="/logo.png"
+                alt="July Plan"
+                className="h-full w-full rounded-lg object-cover"
+              />
+            </div>
           )}
           <div className="min-w-0 flex-1">
             <div className="text-base font-semibold truncate leading-tight">{title}</div>
@@ -214,16 +222,16 @@ export function ExtendedFab({ onClick, label = 'Add Task' }: FabProps) {
       onClick={onClick}
       className={cn(
         'absolute right-4 z-40 h-14 px-5 rounded-2xl flex items-center gap-2',
-        'bg-primary text-primary-foreground font-semibold text-sm',
-        'shadow-lg hover:shadow-xl transition-shadow state-layer',
+        'gradient-primary-strong text-white font-bold text-sm',
+        'shadow-xl transition-shadow',
       )}
       style={{
         bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))',
-        boxShadow: 'var(--elevation-3)',
+        boxShadow: 'var(--elevation-4), 0 0 24px color-mix(in oklch, var(--grad-from) 30%, transparent)',
       }}
       aria-label={label}
     >
-      <Plus className="h-5 w-5" strokeWidth={2.5} />
+      <Plus className="h-5 w-5" strokeWidth={3} />
       <span className="pr-1">{label}</span>
     </motion.button>
   );
@@ -370,8 +378,8 @@ export function MoreSheet({ open, onOpenChange, current, onNavigate }: MoreSheet
 
         {/* Profile / offline card */}
         {profile && (
-          <div className="mx-5 my-3 p-3 rounded-2xl bg-accent/50 border border-border flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-semibold text-sm">
+          <div className="mx-5 my-3 p-3 rounded-2xl gradient-hero border border-border flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full gradient-primary-strong text-white flex items-center justify-center font-semibold text-sm shadow-sm">
               {profile.email?.[0]?.toUpperCase() ?? 'U'}
             </div>
             <div className="flex-1 min-w-0">
@@ -412,8 +420,8 @@ export function MoreSheet({ open, onOpenChange, current, onNavigate }: MoreSheet
                       )}
                     >
                       <span className={cn(
-                        'h-9 w-9 rounded-full flex items-center justify-center shrink-0',
-                        active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                        'h-9 w-9 rounded-full flex items-center justify-center shrink-0 transition-all',
+                        active ? 'gradient-primary-strong text-white shadow-sm' : 'bg-muted text-muted-foreground',
                       )}>
                         {item.key === 'sections' ? (
                           <SectionIcon name="FolderTree" className="h-4 w-4" />
@@ -434,12 +442,12 @@ export function MoreSheet({ open, onOpenChange, current, onNavigate }: MoreSheet
           ))}
 
           {/* Footer — July progress */}
-          <div className="rounded-2xl p-4 bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20">
+          <div className="rounded-2xl p-4 gradient-hero border border-primary/20">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted-foreground font-medium">July Progress</span>
               <span className="text-xs font-bold text-primary">Day {new Date().getDate()} / 31</span>
             </div>
-            <Progress value={(new Date().getDate() / 31) * 100} className="h-1.5 mb-2" />
+            <Progress value={(new Date().getDate() / 31) * 100} className="h-1.5 mb-2 [&>div]:gradient-progress" />
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-muted-foreground">Best streak: <span className="text-orange-500 font-semibold">{bestStreak} days</span></span>
               {wasted >= settings.maxWastedDays && (
@@ -492,7 +500,7 @@ export function MobileShell({
             paddingTop: '8px',
           }}
         >
-          <div className="px-4 pb-24 pt-2">
+          <div className={cn('px-4 pt-2', showFab ? 'pb-40' : 'pb-24')}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={current}

@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
-import { useStore } from '@/lib/store';
+import { useStore, ACCENT_COLORS } from '@/lib/store';
+import type { AccentColorKey } from '@/lib/types';
 import { useAuth } from '@/lib/auth/context';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ import { SyncIndicator } from '@/components/app/sync-indicator';
 import {
   Sun, Moon, Monitor, Download, Upload, RotateCcw, Bell, Volume2,
   Droplet, Beef, AlertTriangle, CalendarX, RefreshCw, Cloud,
+  Palette, Sparkles, Check,
 } from 'lucide-react';
 
 export function SettingsView() {
@@ -76,30 +78,120 @@ export function SettingsView() {
         </p>
       </div>
 
-      {/* Theme */}
+      {/* Appearance — premium section with theme + accent color + gradient intensity */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Appearance</CardTitle>
-          <CardDescription>Choose light, dark, or system theme</CardDescription>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Palette className="h-4 w-4 text-primary" />
+            Appearance
+          </CardTitle>
+          <CardDescription>Theme, accent color, and gradient intensity</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { key: 'light', label: 'Light', icon: Sun },
-              { key: 'dark', label: 'Dark', icon: Moon },
-              { key: 'system', label: 'System', icon: Monitor },
-            ].map(({ key, label, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => { setTheme(key); updateSettings({ theme: key as 'light' | 'dark' | 'system' }); }}
-                className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-colors ${
-                  theme === key ? 'border-primary bg-primary/10' : 'hover:bg-accent/40'
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="text-sm font-medium">{label}</span>
-              </button>
-            ))}
+        <CardContent className="space-y-5">
+          {/* Theme mode */}
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2 block">Theme Mode</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { key: 'light', label: 'Light', icon: Sun },
+                { key: 'dark', label: 'Dark', icon: Moon },
+                { key: 'system', label: 'System', icon: Monitor },
+              ].map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  onClick={() => { setTheme(key); updateSettings({ theme: key as 'light' | 'dark' | 'system' }); }}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${
+                    theme === key ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-accent/40 text-muted-foreground'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="text-xs font-medium">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Accent color picker */}
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2 block">Accent Color</Label>
+            <div className="grid grid-cols-4 gap-2">
+              {(Object.keys(ACCENT_COLORS) as AccentColorKey[]).map((key) => {
+                const def = ACCENT_COLORS[key];
+                const selected = settings.accentColor === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => updateSettings({ accentColor: key })}
+                    className={`relative flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all ${
+                      selected ? 'border-foreground/20 bg-accent/40' : 'border-transparent hover:bg-accent/30'
+                    }`}
+                  >
+                    <span
+                      className="h-9 w-9 rounded-full flex items-center justify-center shadow-md"
+                      style={{ background: `linear-gradient(135deg, ${def.gradient.from}, ${def.gradient.to})` }}
+                    >
+                      {selected && <Check className="h-4 w-4 text-white" strokeWidth={3} />}
+                    </span>
+                    <span className={`text-[10px] font-medium ${selected ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      {def.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Gradient intensity */}
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2 block flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3" />
+              Gradient Intensity
+            </Label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { key: 'subtle',  label: 'Subtle',  desc: 'Minimal' },
+                { key: 'medium',  label: 'Medium',  desc: 'Balanced' },
+                { key: 'vibrant', label: 'Vibrant', desc: 'Bold' },
+              ].map(({ key, label, desc }) => {
+                const selected = settings.gradientIntensity === key as 'subtle' | 'medium' | 'vibrant';
+                return (
+                  <button
+                    key={key}
+                    onClick={() => updateSettings({ gradientIntensity: key as 'subtle' | 'medium' | 'vibrant' })}
+                    className={`flex flex-col items-center gap-0.5 p-3 rounded-xl border-2 transition-all ${
+                      selected ? 'border-primary bg-primary/10' : 'border-border hover:bg-accent/40'
+                    }`}
+                  >
+                    <span
+                      className="h-2 w-12 rounded-full mb-1"
+                      style={{
+                        background: `linear-gradient(90deg, var(--grad-from), var(--grad-to))`,
+                        opacity: key === 'subtle' ? 0.35 : key === 'medium' ? 0.65 : 1.0,
+                      }}
+                    />
+                    <span className={`text-xs font-medium ${selected ? 'text-primary' : 'text-foreground'}`}>{label}</span>
+                    <span className="text-[10px] text-muted-foreground">{desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Live preview */}
+          <div>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2 block">Live Preview</Label>
+            <div className="rounded-2xl p-4 gradient-hero border border-primary/20 flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl gradient-primary-strong flex items-center justify-center shadow-md">
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-semibold gradient-text-accent">Your accent color</div>
+                <div className="text-[11px] text-muted-foreground">Updates instantly across the whole app</div>
+              </div>
+              <div className="h-9 px-4 rounded-xl gradient-primary-strong text-white text-xs font-semibold flex items-center shadow-sm">
+                Button
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

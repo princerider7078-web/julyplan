@@ -181,6 +181,9 @@ export interface AIMemoryItem {
 
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
+  // V6: appearance controls
+  accentColor: AccentColorKey;     // primary color theme
+  gradientIntensity: 'subtle' | 'medium' | 'vibrant';  // gradient strength
   waterTarget: number;     // ml
   proteinTarget: number;   // grams
   maxWastedDays: number;   // per month
@@ -199,6 +202,27 @@ export interface AppSettings {
   // V4.1: auto-fire notifications when task time arrives
   autoTaskNotifications: boolean;
   taskNotificationLeadMinutes: number;  // fire N minutes before task time
+}
+
+// V6: Accent color options for user-selectable theming
+export type AccentColorKey =
+  | 'amber'    // default — warm amber/orange
+  | 'teal'     // teal/cyan
+  | 'violet'   // purple
+  | 'rose'     // pink/red
+  | 'emerald'  // green
+  | 'sunset'   // orange-pink gradient
+  | 'ocean';   // blue-teal gradient
+
+export interface AccentColorDef {
+  key: AccentColorKey;
+  label: string;
+  // Light mode values
+  light: { primary: string; primaryForeground: string; ring: string; chart1: string };
+  // Dark mode values
+  dark: { primary: string; primaryForeground: string; ring: string; chart1: string };
+  // Gradient stops for premium gradients
+  gradient: { from: string; to: string };
 }
 
 export interface AppState {

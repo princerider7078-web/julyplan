@@ -164,12 +164,12 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Greeting header — premium hero with progress ring */}
+      {/* Greeting header — premium hero with gradient + progress ring */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.2, 0, 0, 1] }}
-        className="rounded-3xl p-5 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/15"
+        className="rounded-3xl p-5 gradient-hero glow-accent border border-primary/20 relative overflow-hidden"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -179,27 +179,28 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
               Week {currentWeek} of July · {weekday}
             </p>
           </div>
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
             <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Today</div>
-              <div className="text-2xl font-bold leading-none mt-0.5">{overallScore}%</div>
-              <div className="flex items-center gap-1 text-[11px] mt-1 justify-end">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Today's Score</div>
+              <div className="text-3xl font-bold leading-none mt-1 gradient-text-accent">{overallScore}%</div>
+              <div className="flex items-center gap-1 text-[11px] mt-1.5 justify-end">
                 <Flame className="h-3 w-3 text-orange-500" />
-                <span className="font-semibold">{bestStreak}</span>
-                <span className="text-muted-foreground">d</span>
+                <span className="font-bold text-orange-500">{bestStreak}</span>
+                <span className="text-muted-foreground">day streak</span>
               </div>
             </div>
             <ProgressRing
               value={overallScore}
               size={72}
               strokeWidth={7}
+              useGradient
             />
           </div>
         </div>
       </motion.div>
 
-      {/* Quick actions — Material 3 chip row */}
-      <div className="grid grid-cols-4 gap-2">
+      {/* Quick actions — Material 3 chip row with consistent styling */}
+      <div className="grid grid-cols-4 gap-2.5">
         {QUICK_ACTIONS.map((qa, idx) => {
           const Icon = qa.icon;
           return (
@@ -208,23 +209,23 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 * idx, duration: 0.3 }}
-              whileTap={{ scale: 0.96 }}
+              whileTap={{ scale: 0.95 }}
               onClick={qa.onClick}
-              className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-card border border-border state-layer"
+              className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-card border border-border hover:border-primary/30 hover:shadow-md transition-all"
             >
               <span
-                className="h-10 w-10 rounded-full flex items-center justify-center"
-                style={{ background: `color-mix(in oklch, ${qa.color} 15%, transparent)` }}
+                className="h-11 w-11 rounded-2xl flex items-center justify-center shadow-sm"
+                style={{ background: `color-mix(in oklch, ${qa.color} 16%, transparent)` }}
               >
-                <Icon className="h-5 w-5" style={{ color: qa.color }} />
+                <Icon className="h-5 w-5" style={{ color: qa.color }} strokeWidth={2.2} />
               </span>
-              <span className="text-[11px] font-medium leading-tight text-center">{qa.label}</span>
+              <span className="text-[11px] font-medium leading-tight text-center text-foreground">{qa.label}</span>
             </motion.button>
           );
         })}
       </div>
 
-      {/* Smart warnings — compact dismissible chips */}
+      {/* Smart warnings — compact dismissible chips with better contrast */}
       {warnings.length > 0 && (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
@@ -234,10 +235,10 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
           {warnings.map((w, i) => (
             <div
               key={i}
-              className="flex items-start gap-2.5 rounded-2xl border border-red-500/30 bg-red-500/8 p-3 text-sm"
+              className="flex items-start gap-3 rounded-2xl border-l-4 border-red-500 bg-red-500/15 p-3.5"
             >
               <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-              <span className="text-red-700 dark:text-red-300 text-[13px] leading-snug">{w}</span>
+              <span className="text-red-600 dark:text-red-200 text-[13px] leading-snug flex-1 font-medium">{w}</span>
             </div>
           ))}
         </motion.div>
@@ -278,14 +279,12 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.05 * idx }}
                     className={cn(
-                      'flex items-center gap-3 p-2.5 rounded-2xl border',
-                      'transition-colors state-layer',
+                      'flex items-center gap-3 p-3 rounded-2xl border transition-all',
+                      'hover:bg-accent/40 hover:border-primary/30',
+                      !!t.completionLog?.[today] && 'opacity-60',
                     )}
                   >
-                    <div className={cn(
-                      'h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-xs font-bold',
-                      ps.bg, ps.text,
-                    )}>
+                    <div className="h-8 w-8 shrink-0 rounded-xl gradient-primary-strong text-white flex items-center justify-center text-sm font-bold shadow-sm">
                       {idx + 1}
                     </div>
                     <Checkbox
@@ -295,16 +294,16 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
                     />
                     <div className="flex-1 min-w-0">
                       <div className={cn(
-                        'font-medium text-sm truncate',
+                        'font-semibold text-sm truncate',
                         !!t.completionLog?.[today] && 'line-through text-muted-foreground',
                       )}>
                         {t.title}
                       </div>
                       {t.time && (
-                        <div className="text-[11px] text-muted-foreground mt-0.5">{formatTime12(t.time)}</div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">{formatTime12(t.time)}</div>
                       )}
                     </div>
-                    <Badge variant="outline" className={cn(ps.bg, ps.text, 'border-0 text-[10px] px-2')}>
+                    <Badge variant="outline" className={cn(ps.bg, ps.text, 'border-0 text-[10px] px-2 py-0.5 font-semibold')}>
                       {ps.label}
                     </Badge>
                   </motion.div>
@@ -348,17 +347,17 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
                       </div>
                       <ProgressRing
                         value={cat.score}
-                        size={36}
-                        strokeWidth={4}
+                        size={38}
+                        strokeWidth={4.5}
                         color={cat.color}
                         label={<span className="text-[10px] font-bold">{cat.score}%</span>}
                       />
                     </div>
-                    <div className="text-xs font-semibold">{cat.label}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                    <div className="text-xs font-bold">{cat.label}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5 font-medium">
                       {cat.done} of {cat.total} done
                     </div>
-                    <Progress value={cat.score} className="h-1 mt-1.5" />
+                    <Progress value={cat.score} className="h-1.5 mt-2 [&>div]:transition-all" />
                   </CardContent>
                 </Card>
               </motion.div>
@@ -498,7 +497,7 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
               <p className="text-[11px] mt-1 text-muted-foreground/70">Build your first habit to start a streak</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2.5">
               {habits.slice(0, 6).map((h, idx) => {
                 const done = !!h.log[today];
                 const streak = getStreak(h.log);
@@ -508,27 +507,32 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.03 * idx }}
-                    whileTap={{ scale: 0.96 }}
+                    whileTap={{ scale: 0.95 }}
                     role="button"
                     tabIndex={0}
                     onClick={() => useStore.getState().toggleHabit(h.id)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); useStore.getState().toggleHabit(h.id); } }}
                     className={cn(
-                      'text-left p-3 rounded-2xl border transition-all cursor-pointer',
+                      'text-left p-3 rounded-2xl border-2 transition-all cursor-pointer',
                       done
-                        ? 'border-emerald-500/40 bg-emerald-500/10'
-                        : 'border-border hover:bg-accent/40',
+                        ? 'border-emerald-500/50 bg-emerald-500/12 shadow-sm'
+                        : 'border-border hover:border-primary/30 hover:bg-accent/30',
                     )}
                   >
                     <div className="flex items-center justify-between">
                       <Checkbox checked={done} className="pointer-events-none" />
-                      {streak > 0 && (
-                        <span className="flex items-center gap-0.5 text-[10px] text-orange-500 font-semibold">
-                          <Flame className="h-2.5 w-2.5" /> {streak}
+                      {streak > 0 ? (
+                        <span className="flex items-center gap-0.5 text-[10px] text-orange-500 font-bold">
+                          <Flame className="h-3 w-3" /> {streak}
                         </span>
+                      ) : (
+                        <span className="h-3 w-3 rounded-full border-2 border-muted-foreground/30" />
                       )}
                     </div>
-                    <div className="text-xs font-medium mt-2 line-clamp-2 leading-tight">
+                    <div className={cn(
+                      'text-xs font-semibold mt-2 line-clamp-2 leading-tight',
+                      done && 'text-emerald-600 dark:text-emerald-400',
+                    )}>
                       {h.name}
                     </div>
                   </motion.div>
@@ -546,16 +550,16 @@ export function DashboardView({ onNavigate, onAddTask }: Props) {
         transition={{ delay: 0.4 }}
         whileTap={{ scale: 0.98 }}
         onClick={() => onNavigate('briefing')}
-        className="w-full rounded-2xl p-4 bg-gradient-to-br from-violet-500/10 via-primary/5 to-transparent border border-violet-500/20 text-left flex items-center gap-3"
+        className="w-full rounded-2xl p-4 gradient-primary-strong text-white text-left flex items-center gap-3 shadow-lg gradient-sheen"
       >
-        <span className="h-10 w-10 rounded-xl bg-violet-500/15 text-violet-500 flex items-center justify-center shrink-0">
+        <span className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 backdrop-blur-sm">
           <TrendingUp className="h-5 w-5" />
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold">Get your AI briefing</div>
-          <div className="text-[11px] text-muted-foreground">Daily insight based on your patterns</div>
+          <div className="text-[11px] text-white/80">Daily insight based on your patterns</div>
         </div>
-        <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+        <ChevronRight className="h-4 w-4 text-white/70 shrink-0" />
       </motion.button>
     </div>
   );

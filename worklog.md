@@ -55,3 +55,87 @@ Stage Summary:
 - Files created: src/components/app/mobile-shell.tsx
 - Files modified: src/app/globals.css, src/app/page.tsx, src/components/app/views/dashboard.tsx, src/components/app/launch-animation.tsx, src/components/app/animated-logo.tsx
 - Next steps for user: build APK with `bunx next build` (output: export) + `bunx cap sync android` + `./gradlew assembleRelease` to ship the new UI to Android
+
+---
+Task ID: 2
+Agent: main
+Task: Fix splash animation, add linear gradients, add color controls in Settings, polish UI to 10/10
+
+Work Log:
+- DIAGNOSED splash animation bug: 3 root causes found
+  1. sessionStorage guard cached "already shown" → splash skipped on every reload
+  2. LaunchAnimation was inside BOTH `if (loading)` and `if (!profile)` blocks → double-mount when auth state changed → second instance skipped due to sessionStorage
+  3. GSAP `$('stage')` looked for `#jp-stage` as descendant, but it was the container element itself → null target warning
+- REWROTE launch-animation.tsx:
+  - Removed sessionStorage guard entirely — splash now plays on every app open (each APK launch = fresh session)
+  - Added 3-phase state machine (playing → exiting → done) with framer-motion AnimatePresence for smooth 0.7s fade+scale exit
+  - Fixed GSAP null targets by filtering out null elements before gsap.set()
+  - Added ambient floating particles (4 teal/emerald dots) for premium feel
+  - Added animated loading dots (3 bouncing teal dots) at bottom
+  - Added premium radial gradient background
+  - Reduced-motion users get a brief 600ms splash instead of skipping entirely
+  - Robust fallback: if GSAP fails to load, static logo shows + auto-dismiss
+- HOISTED LaunchAnimation in page.tsx — now wraps the dashboard return too, so no remount between loading/login/dashboard states
+- ADDED V6 appearance controls to store:
+  - New AppSettings fields: `accentColor` (7 options) + `gradientIntensity` (subtle/medium/vibrant)
+  - New types: AccentColorKey, AccentColorDef
+  - ACCENT_COLORS registry with 7 hand-tuned palettes (amber, teal, violet, rose, emerald, sunset, ocean) — each with light/dark variants + gradient stops, all in oklch
+  - Bumped persist version 5 → 6 (merge function backfills new fields automatically)
+- CREATED ThemeApplier component — reads accentColor + gradientIntensity from store, applies CSS variables (--primary, --ring, --grad-from, --grad-to, --grad-intensity) at runtime; watches for dark/light class changes via MutationObserver
+- ADDED to layout.tsx — ThemeApplier mounted once at root
+- ADDED V6 premium gradient system to globals.css:
+  - .gradient-primary (intensity-controlled accent gradient)
+  - .gradient-primary-strong (full-opacity for FABs, hero accents)
+  - .gradient-hero (subtle 3-stop for greeting cards)
+  - .gradient-border (1px gradient border via mask)
+  - .gradient-sheen (animated hover sheen)
+  - .glass-accent (glass with accent-tinted border)
+  - .gradient-progress (gradient progress bar fill)
+  - .gradient-text-accent (gradient text)
+  - .glow-accent (radial glow for hero sections)
+- REBUILT Settings appearance section with 4 controls:
+  - Theme mode (Light/Dark/System) with icons
+  - Accent color picker — 7 gradient circles with checkmark on selected
+  - Gradient intensity (Subtle/Medium/Vibrant) with live opacity preview bars
+  - Live preview card showing gradient + button + text
+- APPLIED gradients across UI:
+  - AppBar logo now wrapped in gradient-primary-strong rounded square
+  - Bottom nav active pill uses gradient-primary
+  - FAB uses gradient-primary-strong with glow shadow
+  - More sheet profile avatar uses gradient-primary-strong
+  - More sheet active nav icons use gradient-primary-strong
+  - More sheet July progress footer uses gradient-hero + gradient progress bar
+  - Dashboard hero card uses gradient-hero + glow-accent
+  - Dashboard ProgressRing now supports useGradient prop (SVG linearGradient)
+  - Dashboard priority number circles use gradient-primary-strong
+  - Dashboard AI briefing CTA uses gradient-primary-strong with sheen
+  - Dashboard "Today's Score" percentage uses gradient-text-accent
+- POLISHED dashboard for 10/10:
+  - Quick action chips: larger 11x11 icons, rounded-2xl containers, hover border + shadow
+  - Warning banner: border-l-4 style, better contrast (red-600/red-200 text), font-medium
+  - Top 3 priorities: gradient number circles, hover border-primary/30, completed tasks opacity-60
+  - Daily execution grid: thicker progress bars (h-1.5), bold labels, font-medium counts
+  - Habit cards: border-2, emerald-500/50 border when done, empty state circle indicator, bold orange streak
+  - Bottom nav labels: text-[11px] font-bold when active, better contrast
+  - FAB: font-bold, larger icon (strokeWidth=3), elevation-4 + glow shadow
+  - Added pb-40 when FAB visible to prevent overlap with last card
+- FIXED ProgressRing component — added useGradient prop with unique SVG linearGradient ID per instance, opacity 0.5 on track for depth
+
+Verification:
+- ✅ `bun run lint` — passes with 0 errors
+- ✅ Splash animation plays on EVERY reload (confirmed via VLM: "splash animation screen")
+- ✅ Splash transitions smoothly to login/dashboard after ~5s
+- ✅ No GSAP warnings in console (filtered null targets)
+- ✅ No hydration errors
+- ✅ Settings appearance section: VLM confirmed all 4 controls visible (theme mode, accent picker, gradient intensity, live preview)
+- ✅ Accent color switching works live: selected Ocean → VLM confirmed "blue/teal (Ocean theme)" applied to FAB, bottom nav, hero card, quick actions
+- ✅ VLM dashboard rating improved from 7/10 → 8/10 (premium feel confirmed, "Today's Score" label clear)
+- ✅ FAB no longer overlaps last card when scrolled to bottom (pb-40 padding)
+
+Stage Summary:
+- Splash animation FIXED — plays every app open, smooth fade-to-home transition
+- 7 accent colors + 3 gradient intensities — user controls colors in Settings, applies live
+- Premium linear gradients across FAB, bottom nav, hero card, priority circles, AI briefing CTA, More sheet
+- UI polished: better spacing, typography hierarchy, contrast, micro-interactions
+- Files created: src/components/app/theme-applier.tsx
+- Files modified: src/components/app/launch-animation.tsx, src/app/page.tsx, src/app/layout.tsx, src/app/globals.css, src/lib/types.ts, src/lib/store.ts, src/components/app/mobile-shell.tsx, src/components/app/views/dashboard.tsx, src/components/app/views/settings.tsx, src/components/app/progress-ring.tsx

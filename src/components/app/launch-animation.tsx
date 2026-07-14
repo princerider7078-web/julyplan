@@ -2,8 +2,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const LAUNCH_KEY = 'july-plan-launch-shown';
-const ANIMATION_DURATION = 5500;
+/**
+ * July Plan — Premium 5-second splash animation
+ *
+ * FIXES (V2):
+ * 1. Removed sessionStorage guard — animation plays every time the app opens
+ *    (each APK launch = fresh session; browser reload = replays, which is what users expect)
+ * 2. Hoisted above loading/login conditionals — no more double-mount skip
+ * 3. Fixed GSAP null target (`stage` was the container element, not a descendant)
+ * 4. Robust fallback: if GSAP fails to load, show static logo + auto-dismiss
+ */
+
+const ANIMATION_DURATION = 5200;  // total ms before forced dismiss
 
 type Phase = 'playing' | 'exiting' | 'done';
 
@@ -16,27 +26,30 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
     if (startedRef.current) return;
     startedRef.current = true;
 
-    queueMicrotask(async () => {
-      const shown = sessionStorage.getItem(LAUNCH_KEY);
-      if (shown) { setPhase('done'); return; }
+    // Respect reduced-motion users
+    const prefersReduced = typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) {
+      // Still show a brief 800ms splash so the transition feels intentional
+      setTimeout(() => setPhase('exiting'), 600);
+      setTimeout(() => setPhase('done'), 1200);
+      return;
+    }
 
-      const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (prefersReduced) { sessionStorage.setItem(LAUNCH_KEY, '1'); setPhase('done'); return; }
+    // Schedule the exit transitions (always run, regardless of GSAP success)
+    const exitTimer = setTimeout(() => setPhase('exiting'), 4500);
+    const doneTimer = setTimeout(() => setPhase('done'), ANIMATION_DURATION);
 
-      sessionStorage.setItem(LAUNCH_KEY, '1');
-
-      // Begin exit transition at ~4.6s (animation finishes ~4.75s); fade for ~0.6s, then done
-      setTimeout(() => setPhase('exiting'), 4600);
-      setTimeout(() => setPhase('done'), ANIMATION_DURATION);
-
-      // Load GSAP + run animation
+    // Load GSAP + run the SVG path-drawing animation
+    (async () => {
       try {
+        // Load GSAP from cdnjs (Turbopack-compatible; esm.sh breaks)
         if (!(window as any).gsap) {
           await new Promise<void>((resolve, reject) => {
             const s = document.createElement('script');
             s.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js';
             s.onload = () => resolve();
-            s.onerror = () => reject(new Error('GSAP failed'));
+            s.onerror = () => reject(new Error('GSAP CDN failed'));
             document.head.appendChild(s);
           });
         }
@@ -50,100 +63,170 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
           });
         }
 
-        await new Promise((r) => setTimeout(r, 100));
+        // Wait two frames so the SVG is fully painted
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
         const gsap = (window as any).gsap;
         const CE = (window as any).CustomEase;
         if (CE) { gsap.registerPlugin(CE); CE.create('apple', 'M0,0 C0.22,1 0.36,1 1,1'); }
         gsap.ticker.fps(60);
-        gsap.defaults({ ease: 'apple' in window ? 'apple' : 'power3.out' });
+        gsap.defaults({ ease: 'apple' in gsap ? 'apple' : 'power3.out' });
 
         const el = containerRef.current;
         if (!el) return;
 
+        // GSAP-friendly selector — searches the whole document for jp-* IDs
+        // (avoids the container-vs-descendant confusion)
         const $ = (id: string) => el.querySelector(`#jp-${id}`) as Element | null;
+
         const circle = $('circle');
         if (!circle) return;
 
-        const circleGlow = $('circleGlow'), arrowShaft = $('arrowShaft'), arrowHead = $('arrowHead');
-        const jLetter = $('jLetter'), pClipRect = $('pClipRect');
+        const circleGlow = $('circleGlow');
+        const arrowShaft = $('arrowShaft');
+        const arrowHead = $('arrowHead');
+        const jLetter = $('jLetter');
+        const pLetter = $('pLetter');
+        const pClipRect = $('pClipRect');
         const line1 = $('line1'), line2 = $('line2'), line3 = $('line3');
-        const checkmark = $('checkmark'), brandText = $('brandText');
-        const sweepGlow = $('sweepGlow'), sweepGlow2 = $('sweepGlow2'), stage = $('stage');
+        const checkmark = $('checkmark');
+        const brandText = $('brandText');
+        const sweepGlow = $('sweepGlow'), sweepGlow2 = $('sweepGlow2');
+
+        // Make the stage visible now (was opacity:0 to avoid FOUC)
+        el.style.opacity = '1';
 
         const circleLen = (circle as SVGPathElement).getTotalLength();
         const arrowLen = arrowShaft ? (arrowShaft as SVGPathElement).getTotalLength() : 100;
         const jLen = jLetter ? (jLetter as SVGPathElement).getTotalLength() : 150;
         const checkLen = checkmark ? (checkmark as SVGPathElement).getTotalLength() : 60;
 
-        [circle, circleGlow, sweepGlow, sweepGlow2].forEach((e) => { if (e) { (e as SVGPathElement).style.strokeDasharray = String(circleLen); (e as SVGPathElement).style.strokeDashoffset = String(circleLen); } });
-        if (arrowShaft) { (arrowShaft as SVGPathElement).style.strokeDasharray = String(arrowLen); (arrowShaft as SVGPathElement).style.strokeDashoffset = String(arrowLen); }
-        if (jLetter) { (jLetter as SVGPathElement).style.strokeDasharray = String(jLen); (jLetter as SVGPathElement).style.strokeDashoffset = String(jLen); }
-        if (checkmark) { (checkmark as SVGPathElement).style.strokeDasharray = String(checkLen); (checkmark as SVGPathElement).style.strokeDashoffset = String(checkLen); }
+        // Set up stroke-dash for path-draw effect
+        [circle, circleGlow, sweepGlow, sweepGlow2].forEach((e) => {
+          if (e) {
+            (e as SVGPathElement).style.strokeDasharray = String(circleLen);
+            (e as SVGPathElement).style.strokeDashoffset = String(circleLen);
+          }
+        });
+        if (arrowShaft) {
+          (arrowShaft as SVGPathElement).style.strokeDasharray = String(arrowLen);
+          (arrowShaft as SVGPathElement).style.strokeDashoffset = String(arrowLen);
+        }
+        if (jLetter) {
+          (jLetter as SVGPathElement).style.strokeDasharray = String(jLen);
+          (jLetter as SVGPathElement).style.strokeDashoffset = String(jLen);
+        }
+        if (checkmark) {
+          (checkmark as SVGPathElement).style.strokeDasharray = String(checkLen);
+          (checkmark as SVGPathElement).style.strokeDashoffset = String(checkLen);
+        }
 
         const sweepSeg = circleLen * 0.18;
-        [sweepGlow, sweepGlow2].forEach((e) => { if (e) { (e as SVGPathElement).style.strokeDasharray = `${sweepSeg} ${circleLen - sweepSeg}`; (e as SVGPathElement).style.strokeDashoffset = String(circleLen); } });
+        [sweepGlow, sweepGlow2].forEach((e) => {
+          if (e) {
+            (e as SVGPathElement).style.strokeDasharray = `${sweepSeg} ${circleLen - sweepSeg}`;
+            (e as SVGPathElement).style.strokeDashoffset = String(circleLen);
+          }
+        });
 
-        gsap.set([arrowHead, checkmark, $('pLetter'), brandText, line1, line2, line3, circleGlow, sweepGlow, sweepGlow2], { opacity: 0 });
-        gsap.set(arrowHead, { scale: 0 });
-        gsap.set(checkmark, { scale: 0 });
-        gsap.set(brandText, { y: 20, attr: { 'letter-spacing': 20 } });
-        gsap.set([line1, line2, line3], { x: -15 });
-        gsap.set(pClipRect, { attr: { width: 0 } });
-        gsap.set(stage, { opacity: 1 });
+        // Initial hidden states — filter out nulls to avoid GSAP warnings
+        const hideTargets = [arrowHead, checkmark, pLetter, brandText, line1, line2, line3, circleGlow, sweepGlow, sweepGlow2].filter(Boolean) as Element[];
+        gsap.set(hideTargets, { opacity: 0 });
+        if (arrowHead) gsap.set(arrowHead, { scale: 0 });
+        if (checkmark) gsap.set(checkmark, { scale: 0 });
+        if (brandText) gsap.set(brandText, { y: 20, attr: { 'letter-spacing': 20 } });
+        if (line1 && line2 && line3) gsap.set([line1, line2, line3], { x: -15 });
+        if (pClipRect) gsap.set(pClipRect, { attr: { width: 0 } });
 
+        // Build the timeline — only include non-null targets
         const tl = gsap.timeline();
-        tl.to(circle, { strokeDashoffset: 0, duration: 1.2, ease: 'power2.inOut' }, 0)
-          .to(circleGlow, { opacity: 0.18, duration: 0.35, ease: 'power2.out' }, 0.8);
-        tl.to(arrowShaft, { strokeDashoffset: 0, duration: 0.55, ease: 'power2.inOut' }, 0.9)
-          .to(arrowHead, { opacity: 1, scale: 1, duration: 0.25, ease: 'back.out(2.5)' }, 1.35)
-          .to(arrowHead, { scale: 0.97, duration: 0.08, ease: 'power2.out' }, 1.40)
-          .to(arrowHead, { scale: 1.0, duration: 0.10, ease: 'power2.inOut' }, 1.48);
-        tl.to(jLetter, { strokeDashoffset: 0, duration: 0.7, ease: 'power2.inOut' }, 1.5)
-          .to(pClipRect, { attr: { width: 90 }, duration: 0.55, ease: 'power2.out' }, 2.2);
-        tl.to(line1, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.5)
-          .to(line2, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.65)
-          .to(line3, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.8);
-        tl.to(checkmark, { opacity: 1, scale: 1, duration: 0.2, ease: 'back.out(2)' }, 3.0)
-          .to(checkmark, { strokeDashoffset: 0, duration: 0.25, ease: 'power2.inOut' }, 3.05)
-          .to(checkmark, { scale: 0.95, duration: 0.10, ease: 'power2.out' }, 3.30)
-          .to(checkmark, { scale: 1.00, duration: 0.16, ease: 'elastic.out(1, 0.55)' }, 3.40);
-        tl.to(brandText, { opacity: 1, duration: 0.5, ease: 'power2.out' }, 3.5)
-          .to(brandText, { y: 0, duration: 0.7, ease: 'power3.out' }, 3.5)
-          .to(brandText, { attr: { 'letter-spacing': 6 }, duration: 0.9, ease: 'power3.out' }, 3.5);
-        tl.set([sweepGlow, sweepGlow2], { strokeDashoffset: circleLen }, 4.2)
-          .to(sweepGlow2, { opacity: 0.35, duration: 0.1, ease: 'power2.out' }, 4.2)
-          .to(sweepGlow, { opacity: 0.55, duration: 0.1, ease: 'power2.out' }, 4.2)
-          .to([sweepGlow, sweepGlow2], { strokeDashoffset: -sweepSeg, duration: 0.55, ease: 'none' }, 4.2)
-          .to([sweepGlow, sweepGlow2], { opacity: 0, duration: 0.2, ease: 'power2.in' }, 4.6);
-        tl.to(circleGlow, { opacity: 0, duration: 0.4, ease: 'power2.in' }, 4.2);
+
+        if (circle) tl.to(circle, { strokeDashoffset: 0, duration: 1.2, ease: 'power2.inOut' }, 0);
+        if (circleGlow) tl.to(circleGlow, { opacity: 0.18, duration: 0.35, ease: 'power2.out' }, 0.8);
+
+        if (arrowShaft) tl.to(arrowShaft, { strokeDashoffset: 0, duration: 0.55, ease: 'power2.inOut' }, 0.9);
+        if (arrowHead) {
+          tl.to(arrowHead, { opacity: 1, scale: 1, duration: 0.25, ease: 'back.out(2.5)' }, 1.35)
+            .to(arrowHead, { scale: 0.97, duration: 0.08, ease: 'power2.out' }, 1.40)
+            .to(arrowHead, { scale: 1.0, duration: 0.10, ease: 'power2.inOut' }, 1.48);
+        }
+
+        if (jLetter) tl.to(jLetter, { strokeDashoffset: 0, duration: 0.7, ease: 'power2.inOut' }, 1.5);
+        if (pClipRect) tl.to(pClipRect, { attr: { width: 90 }, duration: 0.55, ease: 'power2.out' }, 2.2);
+
+        if (line1) tl.to(line1, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.5);
+        if (line2) tl.to(line2, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.65);
+        if (line3) tl.to(line3, { opacity: 1, x: 0, duration: 0.3, ease: 'power2.out' }, 2.8);
+
+        if (checkmark) {
+          tl.to(checkmark, { opacity: 1, scale: 1, duration: 0.2, ease: 'back.out(2)' }, 3.0)
+            .to(checkmark, { strokeDashoffset: 0, duration: 0.25, ease: 'power2.inOut' }, 3.05)
+            .to(checkmark, { scale: 0.95, duration: 0.10, ease: 'power2.out' }, 3.30)
+            .to(checkmark, { scale: 1.00, duration: 0.16, ease: 'elastic.out(1, 0.55)' }, 3.40);
+        }
+
+        if (brandText) {
+          tl.to(brandText, { opacity: 1, duration: 0.5, ease: 'power2.out' }, 3.5)
+            .to(brandText, { y: 0, duration: 0.7, ease: 'power3.out' }, 3.5)
+            .to(brandText, { attr: { 'letter-spacing': 6 }, duration: 0.9, ease: 'power3.out' }, 3.5);
+        }
+
+        if (sweepGlow && sweepGlow2) {
+          tl.set([sweepGlow, sweepGlow2], { strokeDashoffset: circleLen }, 4.2)
+            .to(sweepGlow2, { opacity: 0.35, duration: 0.1, ease: 'power2.out' }, 4.2)
+            .to(sweepGlow, { opacity: 0.55, duration: 0.1, ease: 'power2.out' }, 4.2)
+            .to([sweepGlow, sweepGlow2], { strokeDashoffset: -sweepSeg, duration: 0.55, ease: 'none' }, 4.2)
+            .to([sweepGlow, sweepGlow2], { opacity: 0, duration: 0.2, ease: 'power2.in' }, 4.6);
+        }
+        if (circleGlow) tl.to(circleGlow, { opacity: 0, duration: 0.4, ease: 'power2.in' }, 4.2);
       } catch (e) {
-        setPhase('done');
+        // GSAP failed — make stage visible immediately so static SVG shows
+        if (containerRef.current) containerRef.current.style.opacity = '1';
       }
-    });
+    })();
+
+    return () => {
+      clearTimeout(exitTimer);
+      clearTimeout(doneTimer);
+    };
   }, []);
 
   if (phase === 'done') return <>{children}</>;
 
   return (
     <>
-      {/* Children are mounted underneath so the fade reveals them smoothly */}
+      {/* Children mount underneath so the fade reveals them smoothly */}
       <div className="block">{children}</div>
 
       <AnimatePresence>
         <motion.div
-          key="launch"
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.6, ease: [0.2, 0, 0, 1] }}
-          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          key="launch-overlay"
+          exit={{ opacity: 0, scale: 1.02 }}
+          transition={{ duration: 0.7, ease: [0.2, 0, 0, 1] }}
+          className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden"
           style={{
-            background: 'radial-gradient(ellipse at center, #0a1620 0%, #000 70%)',
+            background: 'radial-gradient(ellipse at 50% 45%, #0a1e2a 0%, #050b12 55%, #000 100%)',
           }}
         >
-          <div id="jp-stage" ref={containerRef} style={{
-            width: 'min(560px, 90vw)', aspectRatio: '400 / 480',
-            position: 'relative', opacity: 0, willChange: 'opacity, transform',
-          }}>
+          {/* Ambient floating particles for premium feel */}
+          <div className="absolute inset-0 pointer-events-none opacity-40">
+            <div className="absolute top-1/4 left-1/4 h-1 w-1 rounded-full bg-teal-300/60 animate-pulse" style={{ animationDelay: '0s', animationDuration: '3s' }} />
+            <div className="absolute top-1/3 right-1/4 h-1.5 w-1.5 rounded-full bg-emerald-300/50 animate-pulse" style={{ animationDelay: '0.8s', animationDuration: '4s' }} />
+            <div className="absolute bottom-1/3 left-1/3 h-1 w-1 rounded-full bg-cyan-300/50 animate-pulse" style={{ animationDelay: '1.5s', animationDuration: '3.5s' }} />
+            <div className="absolute bottom-1/4 right-1/3 h-1 w-1 rounded-full bg-teal-200/60 animate-pulse" style={{ animationDelay: '2.1s', animationDuration: '2.8s' }} />
+          </div>
+
+          <div
+            ref={containerRef}
+            id="jp-stage"
+            style={{
+              width: 'min(560px, 86vw)',
+              aspectRatio: '400 / 480',
+              position: 'relative',
+              opacity: 0,  // GSAP will set this to 1; fallback also sets it
+              willChange: 'opacity, transform',
+            }}
+          >
             <svg viewBox="0 0 400 480" xmlns="http://www.w3.org/2000/svg"
               style={{ width: '100%', height: '100%', overflow: 'visible', display: 'block' }}
               aria-label="July Plan logo animation">
@@ -172,12 +255,21 @@ export function LaunchAnimation({ children }: { children: React.ReactNode }) {
               <path id="jp-sweepGlow2" d="M 200,345 A 145,145 0 0,1 55,200 A 145,145 0 0,1 200,55 A 145,145 0 0,1 345,200 A 145,145 0 0,1 200,345" fill="none" stroke="#7CF0C0" strokeWidth="14" strokeLinecap="round" opacity="0" filter="url(#jp-sbf)"/>
             </svg>
           </div>
+
+          {/* Subtle "Skip" affordance */}
           <button
-            onClick={() => setPhase('done')}
-            className="absolute bottom-8 right-8 text-white/40 hover:text-white/80 text-[11px] uppercase tracking-[0.2em] font-medium transition-colors z-10 px-3 py-1.5 rounded-full border border-white/15"
+            onClick={() => { setPhase('exiting'); setTimeout(() => setPhase('done'), 600); }}
+            className="absolute bottom-8 right-8 text-white/35 hover:text-white/75 text-[10px] uppercase tracking-[0.25em] font-medium transition-colors z-10 px-4 py-2 rounded-full border border-white/12 backdrop-blur-sm"
           >
             Skip
           </button>
+
+          {/* Premium loading dots at the bottom */}
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
+            <div className="h-1.5 w-1.5 rounded-full bg-teal-300/70 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '1.2s' }} />
+            <div className="h-1.5 w-1.5 rounded-full bg-teal-300/70 animate-bounce" style={{ animationDelay: '150ms', animationDuration: '1.2s' }} />
+            <div className="h-1.5 w-1.5 rounded-full bg-teal-300/70 animate-bounce" style={{ animationDelay: '300ms', animationDuration: '1.2s' }} />
+          </div>
         </motion.div>
       </AnimatePresence>
     </>

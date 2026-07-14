@@ -387,3 +387,115 @@
   border-radius: 3px 3px 0 0;
   transition: all 0.3s var(--ease-emphasized);
 }
+
+/* ════════════════════════════════════════════════════════
+   V6 Premium Gradient System
+   Intensity controlled by --grad-intensity (0.35 / 0.65 / 1.0)
+   Colors driven by --grad-from / --grad-to (set by ThemeApplier)
+   ════════════════════════════════════════════════════════ */
+
+/* Primary accent gradient — uses the user's chosen accent color */
+.gradient-primary {
+  background: linear-gradient(135deg,
+    color-mix(in oklch, var(--grad-from) calc(var(--grad-intensity) * 100%), transparent),
+    color-mix(in oklch, var(--grad-to) calc(var(--grad-intensity) * 100%), transparent)
+  );
+}
+
+/* Strong gradient (always full opacity) — for FABs, hero accents */
+.gradient-primary-strong {
+  background: linear-gradient(135deg, var(--grad-from), var(--grad-to));
+}
+
+/* Subtle hero gradient — for greeting cards */
+.gradient-hero {
+  background:
+    linear-gradient(135deg,
+      color-mix(in oklch, var(--grad-from) calc(var(--grad-intensity) * 18%), transparent) 0%,
+      color-mix(in oklch, var(--grad-to) calc(var(--grad-intensity) * 10%), transparent) 50%,
+      transparent 100%
+    );
+}
+
+/* Premium gradient border */
+.gradient-border {
+  position: relative;
+  background: var(--card);
+  border-radius: inherit;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    color-mix(in oklch, var(--grad-from) calc(var(--grad-intensity) * 60%), transparent),
+    transparent 60%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Animated gradient sheen — for premium cards */
+.gradient-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.gradient-sheen::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -100%;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in oklch, var(--grad-from) calc(var(--grad-intensity) * 12%), transparent),
+    transparent
+  );
+  transform: rotate(25deg);
+  transition: left 0.8s var(--ease-emphasized);
+  pointer-events: none;
+}
+.gradient-sheen:hover::after { left: 150%; }
+
+/* Glass with subtle accent tint */
+.glass-accent {
+  background: color-mix(in oklch, var(--surface-container-high) 78%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid color-mix(in oklch, var(--grad-from) calc(var(--grad-intensity) * 25%), var(--border));
+}
+
+/* Gradient progress bar fill */
+.gradient-progress {
+  background: linear-gradient(90deg, var(--grad-from), var(--grad-to)) !important;
+}
+
+/* Gradient text — uses accent colors */
+.gradient-text-accent {
+  background: linear-gradient(135deg, var(--grad-from), var(--grad-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Soft radial glow — for hero accents */
+.glow-accent {
+  position: relative;
+}
+.glow-accent::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(circle at 30% 30%,
+    color-mix(in oklch, var(--grad-from) calc(var(--grad-intensity) * 25%), transparent) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+.glow-accent > * { position: relative; z-index: 1; }
