@@ -499,3 +499,25 @@
   z-index: 0;
 }
 .glow-accent > * { position: relative; z-index: 1; }
+
+/* ════════════════════════════════════════════════════════
+   V6.1 Splash particle drift animations
+   ════════════════════════════════════════════════════════ */
+@keyframes drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+  25% { transform: translate(8px, -12px) scale(1.2); opacity: 1; }
+  50% { transform: translate(-6px, -8px) scale(0.9); opacity: 0.7; }
+  75% { transform: translate(4px, -14px) scale(1.1); opacity: 0.9; }
+}
+@keyframes drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+  33% { transform: translate(-10px, -10px) scale(1.15); opacity: 0.9; }
+  66% { transform: translate(6px, -16px) scale(0.95); opacity: 0.7; }
+}
+@keyframes drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(0.9); opacity: 0.4; }
+  50% { transform: translate(12px, -18px) scale(1.25); opacity: 1; }
+}
+.drift-1 { animation: drift-1 4s ease-in-out infinite; }
+.drift-2 { animation: drift-2 4s ease-in-out infinite; }
+.drift-3 { animation: drift-3 4s ease-in-out infinite; }

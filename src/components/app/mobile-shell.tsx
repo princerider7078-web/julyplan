@@ -10,12 +10,16 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Home, ListChecks, Brain, Flame, LayoutGrid,
   Wallet, CalendarDays, BookOpen, BookMarked, Sunrise,
   Sparkles, Coffee, FileText, Bell, RotateCcw,
   BarChart3, Cpu, Settings as SettingsIcon, Plus,
   ChevronRight, LogOut, FolderTree, MessageCircle,
-  Cloud, CloudOff, X,
+  Cloud, CloudOff, X, AlertTriangle,
 } from 'lucide-react';
 import { SectionIcon } from './icon';
 import type { ViewKey } from './sidebar';
@@ -71,21 +75,15 @@ export function BottomNav({ current, onNavigate, onMore }: BottomNavProps) {
         {PRIMARY_DESTINATIONS.map((dest) => {
           const Icon = dest.icon;
           const active = current === dest.key;
-          let badge: React.ReactNode = null;
+          // Build badge content (positioned inside icon container at top-right)
+          let badgeContent: React.ReactNode = null;
           if (dest.key === 'today' && todayPending > 0) {
-            badge = (
-              <span className="absolute top-1.5 right-1/2 translate-x-3 h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
-                {todayPending > 99 ? '99+' : todayPending}
-              </span>
-            );
+            badgeContent = todayPending > 99 ? '99+' : todayPending;
           }
           if (dest.key === 'habits' && bestStreak > 0) {
-            badge = (
-              <span className="absolute top-1.5 right-1/2 translate-x-3 h-4 min-w-4 px-1 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center">
-                {bestStreak}
-              </span>
-            );
+            badgeContent = bestStreak;
           }
+          const badgeColor = dest.key === 'habits' ? 'bg-orange-500 text-white' : 'bg-primary text-primary-foreground';
           return (
             <button
               key={dest.key}
@@ -101,11 +99,19 @@ export function BottomNav({ current, onNavigate, onMore }: BottomNavProps) {
               <motion.span
                 layout
                 className={cn(
-                  'flex items-center justify-center h-8 w-14 rounded-full transition-all',
+                  'relative flex items-center justify-center h-8 w-14 rounded-full transition-all',
                   active && 'gradient-primary text-primary',
                 )}
               >
                 <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
+                {badgeContent !== null && (
+                  <span className={cn(
+                    'absolute -top-1.5 -right-0.5 h-4 min-w-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center shadow-md ring-2 ring-background',
+                    badgeColor,
+                  )}>
+                    {badgeContent}
+                  </span>
+                )}
               </motion.span>
               <span className={cn(
                 'text-[11px] font-medium leading-none transition-colors',
@@ -113,7 +119,6 @@ export function BottomNav({ current, onNavigate, onMore }: BottomNavProps) {
               )}>
                 {dest.label}
               </span>
-              {badge}
             </button>
           );
         })}
@@ -298,6 +303,7 @@ export function MoreSheet({ open, onOpenChange, current, onNavigate }: MoreSheet
   const aiNotifications = useStore((s) => s.aiNotifications);
   const settings = useStore((s) => s.settings);
   const { profile, isOffline, signOut } = useAuth();
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   // Pre-compute badge values
   const activeMemories = memories.filter((m) => !m.archived && !m.disabled).length;
@@ -389,7 +395,7 @@ export function MoreSheet({ open, onOpenChange, current, onNavigate }: MoreSheet
               </div>
             </div>
             <button
-              onClick={() => signOut()}
+              onClick={() => setLogoutOpen(true)}
               className="h-8 px-3 rounded-full text-xs font-medium flex items-center gap-1 state-layer text-muted-foreground hover:bg-background"
             >
               <LogOut className="h-3.5 w-3.5" />
@@ -457,6 +463,39 @@ export function MoreSheet({ open, onOpenChange, current, onNavigate }: MoreSheet
           </div>
         </div>
       </SheetContent>
+
+      {/* Logout confirmation dialog — context-aware warning */}
+      <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
+        <AlertDialogContent className="max-w-[400px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <span className="h-8 w-8 rounded-full bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              Sign out of July Plan?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {isOffline
+                ? 'You are in offline mode. Your data is stored only on this device and will remain here when you return. Sign out to switch accounts or return to the login screen.'
+                : 'You will be signed out of your cloud account. Your data remains safely synced to the cloud and will be available when you sign back in.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row gap-2">
+            <AlertDialogCancel className="mt-0 flex-1">Stay signed in</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 flex-1"
+              onClick={() => {
+                setLogoutOpen(false);
+                onOpenChange(false);
+                signOut();
+              }}
+            >
+              <LogOut className="h-4 w-4 mr-1.5" />
+              Sign out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }

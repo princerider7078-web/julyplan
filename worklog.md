@@ -139,3 +139,72 @@ Stage Summary:
 - UI polished: better spacing, typography hierarchy, contrast, micro-interactions
 - Files created: src/components/app/theme-applier.tsx
 - Files modified: src/components/app/launch-animation.tsx, src/app/page.tsx, src/app/layout.tsx, src/app/globals.css, src/lib/types.ts, src/lib/store.ts, src/components/app/mobile-shell.tsx, src/components/app/views/dashboard.tsx, src/components/app/views/settings.tsx, src/components/app/progress-ring.tsx
+
+---
+Task ID: 3
+Agent: main
+Task: Professional product-level upgrade of splash animation, fix logout confirmation, move bottom nav badges to top-right of icons
+
+Work Log:
+
+## 1. Professional Splash Animation Upgrade (V3)
+- REWROTE launch-animation.tsx with cinematic 5.8-second sequence:
+  - **Scene 0 (0-0.8s)**: Logo halo fades in + pulses infinitely (radial gradient glow behind logo)
+  - **Scene 1 (0.2-1.4s)**: Circle path draws with power2.inOut
+  - **Scene 2 (1.1-1.7s)**: Arrow shaft draws + head pops with back.out(2.5) bounce
+  - **Scene 3 (1.7-2.9s)**: J letter draws + P letter reveals via clip-path width animation
+  - **Scene 4 (2.7-3.2s)**: Three progress lines slide in with stagger
+  - **Scene 5 (3.2-3.7s)**: Checkmark pops + draws with elastic.out settle
+  - **Scene 6 (3.7-4.4s)**: "July Plan" brand text fades in + letter-spacing settles from 20→6
+  - **Scene 7 (4.1-4.6s)**: Tagline "PERSONAL AI OPERATING SYSTEM" fades in below brand
+  - **Scene 8 (4.4-5.0s)**: Sweep glow circles the logo
+  - **Scene 9 (0.5-4.8s)**: Thin loading ring fills around the logo (parallel to all other scenes)
+- ADDED 8 ambient particles with 3 drift patterns (drift-1, drift-2, drift-3) — each particle drifts + twinkles + scales independently, with glow shadows
+- ADDED logo halo — soft pulsing radial gradient glow behind the logo (teal→emerald)
+- ADDED thin circular loading ring — SVG circle that fills over 4 seconds using strokeDashoffset animation, with gradient stroke
+- ADDED tagline "PERSONAL AI OPERATING SYSTEM" below "July Plan" brand text — fades in at 4.1s
+- ENHANCED exit transition — now uses scale(1.04) + blur(4px) + opacity fade over 0.8s for cinematic depth
+- ENHANCED background — 4-stop radial gradient (deep teal → dark → black) for more depth
+- ADDED drift keyframes to globals.css (drift-1, drift-2, drift-3 with translate + scale + opacity variations)
+- EXTENDED viewBox from 400×480 to 400×520 to accommodate tagline
+- ROBUST fallback maintained — GSAP failure shows static logo + auto-dismiss
+
+## 2. Logout Confirmation Dialog
+- IMPORTED AlertDialog components into mobile-shell.tsx
+- ADDED `logoutOpen` state to MoreSheet component
+- CHANGED Exit button from `onClick={() => signOut()}` to `onClick={() => setLogoutOpen(true)}`
+- ADDED context-aware AlertDialog:
+  - Title: "Sign out of July Plan?" with red AlertTriangle icon in circle
+  - Description: Context-aware — detects `isOffline`:
+    - Offline: "Your data is stored only on this device and will remain here when you return."
+    - Cloud: "Your data remains safely synced to the cloud and will be available when you sign back in."
+  - Cancel button: "Stay signed in" (flex-1)
+  - Confirm button: "Sign out" with LogOut icon (red bg, flex-1)
+  - On confirm: closes dialog + closes More sheet + calls signOut()
+- VERIFIED: "Stay signed in" closes dialog and returns to More sheet without signing out
+
+## 3. Bottom Nav Badges Moved to Icon Top-Right
+- RESTRUCTURED BottomNav button layout:
+  - BEFORE: Badge was a sibling of motion.span (icon container) + label, positioned `absolute top-1.5 right-1/2 translate-x-3` (above the label area)
+  - AFTER: Badge is INSIDE motion.span (icon container), positioned `absolute -top-1.5 -right-0.5` (top-right corner of icon)
+- ADDED `relative` class to motion.span so badge positions against the icon container
+- ADDED `ring-2 ring-background` to badge for contrast against any background color
+- ADDED `shadow-md` to badge for depth/elevation
+- UNIFIED badge rendering — single badgeContent variable + badgeColor per destination (orange for habits, primary for today)
+- Badge now sits precisely at the top-right corner of the icon, with a background-colored ring for clean separation
+
+Verification:
+- ✅ `bun run lint` — passes with 0 errors
+- ✅ Console completely clean — no errors, no warnings, no GSAP null targets
+- ✅ Splash animation VLM-verified: particles drifting ✓, glow halo ✓, loading ring ✓, brand text ✓, tagline ✓ — rated 7-8/10 professional cinematic feel
+- ✅ Splash plays on every reload, transitions smoothly to app after ~5.8s
+- ✅ Logout confirmation VLM-verified: "Sign out of July Plan?" dialog with warning icon, context-aware offline message, Stay signed in + Sign out buttons
+- ✅ "Stay signed in" correctly cancels and returns to More sheet
+- ✅ Bottom nav badge VLM-verified: "positioned at the top-right of the icon" — exactly as requested
+- ✅ Badge has ring-2 ring-background for contrast
+
+Stage Summary:
+- Splash animation upgraded to professional product-level cinematic quality with 9-scene GSAP timeline, particle drift, logo halo, loading ring, tagline reveal, and premium blur+scale exit
+- Logout now requires confirmation with context-aware warning (offline vs cloud)
+- Bottom nav badges moved from above-label to top-right-corner-of-icon with contrast ring
+- Files modified: src/components/app/launch-animation.tsx, src/components/app/mobile-shell.tsx, src/app/globals.css
