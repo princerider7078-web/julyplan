@@ -21,8 +21,8 @@ export const metadata: Metadata = {
   keywords: ["July Plan", "AI OS", "Supabase", "task manager", "habit tracker"],
   authors: [{ name: "July Plan" }],
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: "/favicon.svg",
+    apple: "/favicon.svg",
   },
 };
 

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth/context';
+import { AnimatedLogo } from '@/components/app/animated-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,7 +38,7 @@ export function LoginScreen() {
       <div className="w-full max-w-md space-y-6">
         {/* Brand */}
         <div className="text-center">
-          <img src="/logo.png" alt="July Plan" className="h-20 w-20 rounded-2xl shadow-lg shadow-orange-500/30 mb-4 mx-auto" />
+          <AnimatedLogo size={120} className="mb-4 mx-auto" />
           <h1 className="text-3xl font-bold tracking-tight">July Plan</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Personal AI Operating System · V2
